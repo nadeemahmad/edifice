@@ -26,6 +26,17 @@ audit: ~/Library/Logs/personal-os/personal/audit
 
 ## Development
 
+Create or refresh the project environment:
+
+```text
+bin/bootstrap
+```
+
+The bootstrap uses a normal wheel installation. Do not replace it with a plain
+editable `uv sync` on Python 3.14.
+
+Run verification:
+
 ```text
 .venv/bin/pytest
 .venv/bin/ruff check .

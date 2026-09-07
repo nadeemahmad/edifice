@@ -1,0 +1,7 @@
+#!/bin/zsh
+set -eu
+
+project_root="${0:A:h:h}"
+cd "$project_root"
+
+UV_NO_EDITABLE=true uv sync --dev
