@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 import click
 
-from personal_os.identifiers import new_uuid7
+from edifice.identifiers import new_uuid7
 
 
 @dataclass(frozen=True)
@@ -42,13 +42,13 @@ REQUIRED_VAULT_FILES = (
 @click.option(
     "--vault",
     "vault_root",
-    envvar="PERSONAL_OS_VAULT",
+    envvar="EDIFICE_VAULT",
     required=True,
     type=click.Path(path_type=Path, file_okay=False),
 )
 @click.option(
     "--audit-root",
-    envvar="PERSONAL_OS_AUDIT_ROOT",
+    envvar="EDIFICE_AUDIT_ROOT",
     required=True,
     type=click.Path(path_type=Path, file_okay=False),
 )
@@ -60,7 +60,7 @@ def cli(
     audit_root: Path,
     dry_run: bool,
 ) -> None:
-    """Operate the local Obsidian personal system."""
+    """Operate the local Edifice system."""
     context.obj = RuntimePaths(
         vault_root=vault_root,
         audit_root=audit_root,
@@ -124,7 +124,7 @@ def doctor(paths: RuntimePaths) -> None:
 @cli.command()
 @click.pass_obj
 def start(paths: RuntimePaths) -> None:
-    """Open the Personal OS home note."""
+    """Open the Edifice home note."""
     _open_note(paths, Path("home.md"))
 
 
@@ -304,7 +304,7 @@ def _append_audit_event(
         "profile": "personal",
         "event_type": event_type,
         "capture_id": capture_id,
-        "target": "vault://personal/01-inbox/inbox.md",
+        "target": "vault://edifice/01-inbox/inbox.md",
         "before_hash": before_hash,
         "after_hash": after_hash,
     }

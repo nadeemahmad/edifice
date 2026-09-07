@@ -8,7 +8,7 @@ created: 2026-09-07
 ## Start
 
 ```text
-personal-os start
+edifice start
 ```
 
 Opens `home.md`, the main cockpit.
@@ -16,7 +16,7 @@ Opens `home.md`, the main cockpit.
 ## Choose today
 
 ```text
-personal-os today
+edifice today
 ```
 
 Opens today's daily review. Record one intended result before starting work.
@@ -24,7 +24,7 @@ Opens today's daily review. Record one intended result before starting work.
 ## Resume work
 
 ```text
-personal-os work
+edifice work
 ```
 
 Opens the project selected in `00-system/current.json`.
@@ -32,7 +32,7 @@ Opens the project selected in `00-system/current.json`.
 ## Review the week
 
 ```text
-personal-os review
+edifice review
 ```
 
 Opens the weekly review containing the current date.
@@ -40,7 +40,7 @@ Opens the weekly review containing the current date.
 ## See current state
 
 ```text
-personal-os status
+edifice status
 ```
 
 Shows the Inbox count, current project and question, daily and weekly review
@@ -49,7 +49,7 @@ paths, and local Git state.
 ## Capture without interruption
 
 ```text
-personal-os capture "Exact words to preserve"
+edifice capture "Exact words to preserve"
 ```
 
 Adds the text to `01-inbox/inbox.md` with a stable ID and redacted audit
@@ -58,17 +58,17 @@ evidence.
 ## Check health
 
 ```text
-personal-os doctor
+edifice doctor
 ```
 
 Verifies the minimum vault structure and confirms Obsidian Sync is disabled.
 
 ## Normal loop
 
-1. Run `personal-os today`.
+1. Run `edifice today`.
 2. Choose one intended result.
-3. Run `personal-os work`.
+3. Run `edifice work`.
 4. Capture interruptions without changing focus.
 5. Update the project resume point and daily closeout.
-6. Run `personal-os status`.
-7. Use `personal-os review` during the weekly review.
+6. Run `edifice status`.
+7. Use `edifice review` during the weekly review.

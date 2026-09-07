@@ -3,7 +3,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from personal_os.cli import cli
+from edifice.cli import cli
 
 REQUIRED_FILES = [
     "AGENTS.md",
@@ -20,7 +20,7 @@ REQUIRED_FILES = [
 
 
 def test_doctor_accepts_complete_minimum_vault(tmp_path: Path) -> None:
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     for relative_path in REQUIRED_FILES:
         path = vault_root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,7 +50,7 @@ def test_doctor_accepts_complete_minimum_vault(tmp_path: Path) -> None:
 
 
 def test_doctor_rejects_enabled_obsidian_sync(tmp_path: Path) -> None:
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     for relative_path in REQUIRED_FILES:
         path = vault_root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,7 +80,7 @@ def test_doctor_rejects_enabled_obsidian_sync(tmp_path: Path) -> None:
 
 
 def test_doctor_rejects_missing_current_state_pointer(tmp_path: Path) -> None:
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     for relative_path in REQUIRED_FILES:
         if relative_path == "00-system/current.json":
             continue

@@ -5,23 +5,23 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from personal_os.cli import cli
+from edifice.cli import cli
 
 
 def test_launcher_runs_current_source(tmp_path: Path) -> None:
     project_root = Path(__file__).parents[1]
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     (vault_root / "home.md").parent.mkdir(parents=True)
-    (vault_root / "home.md").write_text("# Personal OS\n", encoding="utf-8")
+    (vault_root / "home.md").write_text("# Edifice\n", encoding="utf-8")
     environment = {
         key: value for key, value in os.environ.items() if key != "PYTHONPATH"
     } | {
-        "PERSONAL_OS_VAULT": str(vault_root),
-        "PERSONAL_OS_AUDIT_ROOT": str(tmp_path / "audit"),
+        "EDIFICE_VAULT": str(vault_root),
+        "EDIFICE_AUDIT_ROOT": str(tmp_path / "audit"),
     }
 
     result = subprocess.run(
-        [str(project_root / "bin" / "personal-os"), "--dry-run", "start"],
+        [str(project_root / "bin" / "edifice"), "--dry-run", "start"],
         check=False,
         capture_output=True,
         text=True,
@@ -33,9 +33,9 @@ def test_launcher_runs_current_source(tmp_path: Path) -> None:
 
 
 def test_start_dry_run_points_to_home(tmp_path: Path) -> None:
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     (vault_root / "home.md").parent.mkdir(parents=True)
-    (vault_root / "home.md").write_text("# Personal OS\n", encoding="utf-8")
+    (vault_root / "home.md").write_text("# Edifice\n", encoding="utf-8")
 
     result = CliRunner().invoke(
         cli,
@@ -54,7 +54,7 @@ def test_start_dry_run_points_to_home(tmp_path: Path) -> None:
 
 
 def test_work_dry_run_uses_current_project_pointer(tmp_path: Path) -> None:
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     project_path = Path("10-personal/operations/projects/first-deliverable.md")
     target = vault_root / project_path
     target.parent.mkdir(parents=True)
@@ -83,7 +83,7 @@ def test_work_dry_run_uses_current_project_pointer(tmp_path: Path) -> None:
 
 
 def test_today_dry_run_opens_selected_daily_review(tmp_path: Path) -> None:
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     daily_path = Path("10-personal/operations/reviews/daily/2026-09-07.md")
     target = vault_root / daily_path
     target.parent.mkdir(parents=True)
@@ -108,7 +108,7 @@ def test_today_dry_run_opens_selected_daily_review(tmp_path: Path) -> None:
 
 
 def test_review_dry_run_opens_week_containing_selected_date(tmp_path: Path) -> None:
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     weekly_path = Path("10-personal/operations/reviews/weekly/2026-09-07-weekly.md")
     target = vault_root / weekly_path
     target.parent.mkdir(parents=True)
@@ -133,7 +133,7 @@ def test_review_dry_run_opens_week_containing_selected_date(tmp_path: Path) -> N
 
 
 def test_status_summarizes_current_operating_state(tmp_path: Path) -> None:
-    vault_root = tmp_path / "personal-os"
+    vault_root = tmp_path / "edifice"
     inbox_path = vault_root / "01-inbox" / "inbox.md"
     inbox_path.parent.mkdir(parents=True)
     inbox_path.write_text(

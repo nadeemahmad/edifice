@@ -23,13 +23,13 @@ Kernel v0 supports:
 
 Owner-facing commands:
 
-- `personal-os start`
-- `personal-os today`
-- `personal-os work`
-- `personal-os review`
-- `personal-os status`
-- `personal-os capture`
-- `personal-os doctor`
+- `edifice start`
+- `edifice today`
+- `edifice work`
+- `edifice review`
+- `edifice status`
+- `edifice capture`
+- `edifice doctor`
 
 ## Boundaries
 

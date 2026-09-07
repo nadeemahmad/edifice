@@ -1,0 +1,1 @@
+"""Edifice operational kernel."""

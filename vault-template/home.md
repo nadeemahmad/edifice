@@ -3,7 +3,7 @@ type: home
 created: 2026-09-07
 ---
 
-# Personal OS
+# Edifice
 
 ## Today
 

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "personal-os"
+name = "edifice"
 version = "0.1.0"
 description = "Local operational kernel for an Obsidian-centered personal system."
 requires-python = ">=3.13,<3.15"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-personal-os = "personal_os.cli:cli"
+edifice = "edifice.cli:cli"
 
 [dependency-groups]
 dev = [
@@ -23,7 +23,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/personal_os"]
+packages = ["src/edifice"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

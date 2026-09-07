@@ -1,11 +1,10 @@
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 from click.testing import CliRunner
 
-from personal_os.cli import cli
+from edifice.cli import cli
 
 
 def test_capture_preserves_text_in_canonical_inbox(tmp_path: Path) -> None:
@@ -76,7 +75,7 @@ def test_concurrent_captures_are_all_preserved(tmp_path: Path) -> None:
     inbox_path.parent.mkdir(parents=True)
     inbox_path.write_text(f"# Inbox\n\n<!-- {'x' * 200_000} -->\n", encoding="utf-8")
     audit_root = tmp_path / "audit"
-    executable = Path(sys.executable).parent / "personal-os"
+    executable = Path(__file__).parents[1] / "bin" / "edifice"
 
     processes = [
         subprocess.Popen(

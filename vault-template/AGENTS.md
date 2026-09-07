@@ -16,7 +16,7 @@ Read these files before substantive work:
 - Treat `10-personal/notes` as human-owned and read-only.
 - Treat `90-archive` as read-only.
 - Preserve raw captures and provenance.
-- Use the `personal-os` command for captures.
+- Use the `edifice` command for captures.
 - Do not add work data, enable synchronization, start background jobs, or
   mutate external systems.
 - Ask for exact approval before protected edits, deletion, publication, or

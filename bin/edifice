@@ -1,0 +1,10 @@
+#!/bin/zsh
+set -eu
+
+project_root="${0:A:h:h}"
+
+export EDIFICE_VAULT="${EDIFICE_VAULT:-$HOME/Obsidian/edifice}"
+export EDIFICE_AUDIT_ROOT="${EDIFICE_AUDIT_ROOT:-$HOME/Library/Logs/edifice/personal/audit}"
+export PYTHONPATH="$project_root/src${PYTHONPATH:+:$PYTHONPATH}"
+
+exec "$project_root/.venv/bin/python" -m edifice "$@"

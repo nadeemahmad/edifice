@@ -7,15 +7,15 @@ created: 2026-09-07
 
 ## Driver
 
-- `personal-os start` opens the home cockpit.
-- `personal-os today` opens the current daily review.
-- `personal-os work` opens the selected active project.
-- `personal-os review` opens the current weekly review.
-- `personal-os status` reports the current paths, Inbox count, and Git state.
+- `edifice start` opens the home cockpit.
+- `edifice today` opens the current daily review.
+- `edifice work` opens the selected active project.
+- `edifice review` opens the current weekly review.
+- `edifice status` reports the current paths, Inbox count, and Git state.
 
 ## Capture
 
-1. Run `personal-os capture "text"`.
+1. Run `edifice capture "text"`.
 2. The command records the exact text in `01-inbox/inbox.md`.
 3. The command adds a stable capture ID.
 4. The command writes prepared and committed audit events without copying the
