@@ -5,6 +5,14 @@ created: 2026-09-07
 
 # Workflows
 
+## Driver
+
+- `personal-os start` opens the home cockpit.
+- `personal-os today` opens the current daily review.
+- `personal-os work` opens the selected active project.
+- `personal-os review` opens the current weekly review.
+- `personal-os status` reports the current paths, Inbox count, and Git state.
+
 ## Capture
 
 1. Run `personal-os capture "text"`.

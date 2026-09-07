@@ -13,6 +13,11 @@ Kernel v0 is a local, personal-only operational system built around Obsidian.
 ## Commands
 
 ```text
+personal-os start
+personal-os today
+personal-os work
+personal-os review
+personal-os status
 personal-os doctor
 personal-os capture "Text to preserve"
 ```

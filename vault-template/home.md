@@ -27,6 +27,7 @@ created: 2026-09-07
 
 ## System
 
+- [[getting-started]]
 - [[operating-manual]]
 - [[workflows]]
 - [[schema]]

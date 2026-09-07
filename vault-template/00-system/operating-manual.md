@@ -21,6 +21,16 @@ Kernel v0 supports:
 - protected human notes and separate AI workspaces;
 - atomic capture writes, hashes, local audit evidence, local Git, and recovery.
 
+Owner-facing commands:
+
+- `personal-os start`
+- `personal-os today`
+- `personal-os work`
+- `personal-os review`
+- `personal-os status`
+- `personal-os capture`
+- `personal-os doctor`
+
 ## Boundaries
 
 - Personal-only content.
