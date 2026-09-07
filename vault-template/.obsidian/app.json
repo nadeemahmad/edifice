@@ -1,0 +1,7 @@
+{
+  "alwaysUpdateLinks": true,
+  "attachmentFolderPath": "00-system/attachments",
+  "newFileFolderPath": "01-inbox",
+  "newFileLocation": "folder",
+  "showUnsupportedFiles": false
+}

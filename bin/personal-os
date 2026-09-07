@@ -1,0 +1,9 @@
+#!/bin/zsh
+set -eu
+
+project_root="${0:A:h:h}"
+
+export PERSONAL_OS_VAULT="${PERSONAL_OS_VAULT:-$HOME/Obsidian/personal-os}"
+export PERSONAL_OS_AUDIT_ROOT="${PERSONAL_OS_AUDIT_ROOT:-$HOME/Library/Logs/personal-os/personal/audit}"
+
+exec "$project_root/.venv/bin/personal-os" "$@"

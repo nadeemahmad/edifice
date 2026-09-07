@@ -1,0 +1,15 @@
+{
+  "backlink": true,
+  "bases": true,
+  "bookmarks": true,
+  "command-palette": true,
+  "file-explorer": true,
+  "file-recovery": true,
+  "global-search": true,
+  "outgoing-link": true,
+  "page-preview": true,
+  "properties": true,
+  "switcher": true,
+  "sync": false,
+  "templates": true
+}
