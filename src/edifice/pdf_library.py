@@ -475,6 +475,7 @@ def backup_personal_pdfs(
     local_pdf_root = settings.pdf_root.resolve()
     copied = 0
     verified = 0
+    catalog_changed = False
 
     with _pdf_lock(audit_root, "personal"):
         index = _load_index(settings.catalog_index, "personal")
@@ -496,7 +497,8 @@ def backup_personal_pdfs(
             source_content = source_path.read_bytes()
             if _sha256(source_content) != expected_hash:
                 raise click.ClickException(f"Personal PDF hash mismatch: {source_path}")
-            if destination_path.exists():
+            created_destination = not destination_path.exists()
+            if not created_destination:
                 if (
                     not destination_path.is_file()
                     or _sha256(destination_path.read_bytes()) != expected_hash
@@ -513,27 +515,37 @@ def backup_personal_pdfs(
                     f"Drive copy hash mismatch: {destination_path}"
                 )
             verified += 1
-            artifact["drive_path"] = (
-                Path(normalized_drive_root.name) / relative_path
-            ).as_posix()
-            artifact["drive_copy_status"] = "local-hash-verified"
-            artifact["drive_sync_status"] = "unavailable"
-            artifact["drive_verified_at"] = datetime.now(UTC).isoformat()
+            drive_path = (Path(normalized_drive_root.name) / relative_path).as_posix()
+            needs_catalog_update = created_destination or any(
+                (
+                    artifact.get("drive_path") != drive_path,
+                    artifact.get("drive_copy_status") != "local-hash-verified",
+                    artifact.get("drive_sync_status") != "unavailable",
+                )
+            )
+            if needs_catalog_update:
+                artifact["drive_path"] = drive_path
+                artifact["drive_copy_status"] = "local-hash-verified"
+                artifact["drive_sync_status"] = "unavailable"
+                artifact["drive_verified_at"] = datetime.now(UTC).isoformat()
+                catalog_changed = True
 
-        _replace_atomically(
-            settings.catalog_index,
-            (
-                json.dumps(index, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-            ).encode(),
-        )
-        _replace_atomically(
-            settings.catalog_markdown,
-            _render_catalog(
-                index=index,
-                vault_root=vault_root,
-                catalog_path=settings.catalog_markdown,
-            ).encode(),
-        )
+        if catalog_changed:
+            _replace_atomically(
+                settings.catalog_index,
+                (
+                    json.dumps(index, indent=2, sort_keys=True, ensure_ascii=False)
+                    + "\n"
+                ).encode(),
+            )
+            _replace_atomically(
+                settings.catalog_markdown,
+                _render_catalog(
+                    index=index,
+                    vault_root=vault_root,
+                    catalog_path=settings.catalog_markdown,
+                ).encode(),
+            )
         _append_pdf_backup_audit_event(
             audit_root=audit_root,
             copied=copied,

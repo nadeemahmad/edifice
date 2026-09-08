@@ -597,6 +597,28 @@ def test_pdf_add_backs_personal_file_to_configured_drive_library(
         "Library/inbox/nadia-ahmad-reliable-context-gathering-2026.pdf"
     )
 
+    catalog_before = (
+        vault_root / "10-personal" / "operations" / "artifacts" / "pdf-catalog.json"
+    ).read_bytes()
+    verified_again = CliRunner().invoke(
+        cli,
+        [
+            "--vault",
+            str(vault_root),
+            "--audit-root",
+            str(tmp_path / "audit"),
+            "--personal-library",
+            str(drive_library),
+            "pdf",
+            "backup-personal",
+        ],
+    )
+    catalog_after = (
+        vault_root / "10-personal" / "operations" / "artifacts" / "pdf-catalog.json"
+    ).read_bytes()
+    assert verified_again.exit_code == 0
+    assert catalog_after == catalog_before
+
 
 def test_pdf_backup_refuses_to_overwrite_different_drive_bytes(
     tmp_path: Path,
