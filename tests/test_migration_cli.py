@@ -30,6 +30,28 @@ def _create_legacy_vault(path: Path) -> Path:
     return path
 
 
+def _create_essentials_vault(path: Path) -> Path:
+    (path / "Essentials").mkdir(parents=True)
+    (path / "Essentials" / "Goals.md").write_text(
+        "# Goals\n\n- [ ] Build something useful\n",
+        encoding="utf-8",
+    )
+    (path / "Essentials" / "Joe Vogel Notes.md").write_text(
+        "# Joe Vogel Notes\n\nA durable note.\n",
+        encoding="utf-8",
+    )
+    (path / "Essentials" / "Notes for BDAY.md").write_text(
+        "# Notes for BDAY\n\nRemember this.\n",
+        encoding="utf-8",
+    )
+    (path / "Other").mkdir()
+    (path / "Other" / "Leave for later.md").write_text(
+        "# Leave for later\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _invoke(
     *,
     vault_root: Path,
@@ -396,3 +418,301 @@ def test_obsidian_plan_separates_work_sources_imports_and_configuration(
     assert manifest["contains_work_content_candidates"] is True
     assert manifest["local_migration_status"] == "review-allowed"
     assert manifest["cloud_storage_status"] == "policy-blocked"
+
+
+def test_migration_approve_binds_essentials_to_protected_note_targets(
+    tmp_path: Path,
+) -> None:
+    source = _create_essentials_vault(tmp_path / "legacy")
+    vault_root = tmp_path / "edifice"
+    migrations_root = tmp_path / "migrations"
+    inventoried = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "obsidian",
+            "--path",
+            str(source),
+        ],
+    )
+    assert inventoried.exit_code == 0
+    package = next((migrations_root / "obsidian-personal").glob("*"))
+    planned = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "plan", str(package)],
+    )
+    assert planned.exit_code == 0
+
+    approved = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "approve",
+            str(package),
+            "--source-prefix",
+            "Essentials/",
+            "--route",
+            "protected-note",
+        ],
+    )
+
+    mapping = json.loads((package / "mapping.json").read_text(encoding="utf-8"))
+    manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+    essentials = [
+        item
+        for item in mapping["items"]
+        if item["source_path"].startswith("Essentials/")
+    ]
+    deferred = [
+        item for item in mapping["items"] if item["source_path"].startswith("Other/")
+    ]
+    assert approved.exit_code == 0
+    assert "Approved: 3" in approved.output
+    assert {item["decision"] for item in essentials} == {"approved"}
+    assert {item["approved_target"] for item in essentials} == {
+        "10-personal/notes/imported/goals.md",
+        "10-personal/notes/imported/joe-vogel-notes.md",
+        "10-personal/notes/imported/notes-for-bday.md",
+    }
+    assert {item["decision"] for item in deferred} == {"review"}
+    assert manifest["status"] == "approved"
+    assert manifest["approved_mapping_sha256"].startswith("sha256:")
+
+
+def test_migration_apply_copies_exact_approved_notes_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    source = _create_essentials_vault(tmp_path / "legacy")
+    source_before = {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+    vault_root = tmp_path / "edifice"
+    migrations_root = tmp_path / "migrations"
+    inventoried = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "obsidian",
+            "--path",
+            str(source),
+        ],
+    )
+    assert inventoried.exit_code == 0
+    package = next((migrations_root / "obsidian-personal").glob("*"))
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=["migrate", "plan", str(package)],
+        ).exit_code
+        == 0
+    )
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=[
+                "migrate",
+                "approve",
+                str(package),
+                "--source-prefix",
+                "Essentials/",
+                "--route",
+                "protected-note",
+            ],
+        ).exit_code
+        == 0
+    )
+
+    applied = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "apply", str(package)],
+    )
+    applied_again = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "apply", str(package)],
+    )
+
+    for source_path in (
+        "Goals.md",
+        "Joe Vogel Notes.md",
+        "Notes for BDAY.md",
+    ):
+        source_bytes = (source / "Essentials" / source_path).read_bytes()
+        target_name = (
+            source_path.removesuffix(".md").casefold().replace(" ", "-") + ".md"
+        )
+        target_bytes = (
+            vault_root / "10-personal" / "notes" / "imported" / target_name
+        ).read_bytes()
+        assert target_bytes == source_bytes
+    mapping = json.loads((package / "mapping.json").read_text(encoding="utf-8"))
+    essentials = [
+        item
+        for item in mapping["items"]
+        if item["source_path"].startswith("Essentials/")
+    ]
+    assert applied.exit_code == 0
+    assert "Imported: 3; already imported: 0" in applied.output
+    assert applied_again.exit_code == 0
+    assert "Imported: 0; already imported: 3" in applied_again.output
+    assert {item["apply_status"] for item in essentials} == {"imported"}
+    assert source_before == {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+
+
+def test_migration_apply_preflights_conflicts_before_writing_any_target(
+    tmp_path: Path,
+) -> None:
+    source = _create_essentials_vault(tmp_path / "legacy")
+    vault_root = tmp_path / "edifice"
+    migrations_root = tmp_path / "migrations"
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=[
+                "migrate",
+                "inventory",
+                "--source",
+                "obsidian",
+                "--path",
+                str(source),
+            ],
+        ).exit_code
+        == 0
+    )
+    package = next((migrations_root / "obsidian-personal").glob("*"))
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=["migrate", "plan", str(package)],
+        ).exit_code
+        == 0
+    )
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=[
+                "migrate",
+                "approve",
+                str(package),
+                "--source-prefix",
+                "Essentials/",
+                "--route",
+                "protected-note",
+            ],
+        ).exit_code
+        == 0
+    )
+    conflicting = vault_root / "10-personal" / "notes" / "imported" / "goals.md"
+    conflicting.parent.mkdir(parents=True)
+    conflicting.write_text("different", encoding="utf-8")
+
+    applied = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "apply", str(package)],
+    )
+
+    assert applied.exit_code != 0
+    assert "Refusing to overwrite a different migrated note" in applied.output
+    assert not (
+        vault_root / "10-personal" / "notes" / "imported" / "joe-vogel-notes.md"
+    ).exists()
+    assert conflicting.read_text(encoding="utf-8") == "different"
+
+
+def test_migration_apply_rejects_mapping_changed_after_approval(
+    tmp_path: Path,
+) -> None:
+    source = _create_essentials_vault(tmp_path / "legacy")
+    vault_root = tmp_path / "edifice"
+    migrations_root = tmp_path / "migrations"
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=[
+                "migrate",
+                "inventory",
+                "--source",
+                "obsidian",
+                "--path",
+                str(source),
+            ],
+        ).exit_code
+        == 0
+    )
+    package = next((migrations_root / "obsidian-personal").glob("*"))
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=["migrate", "plan", str(package)],
+        ).exit_code
+        == 0
+    )
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=[
+                "migrate",
+                "approve",
+                str(package),
+                "--source-prefix",
+                "Essentials/",
+                "--route",
+                "protected-note",
+            ],
+        ).exit_code
+        == 0
+    )
+    mapping_path = package / "mapping.json"
+    mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+    mapping["items"][0]["title"] = "Changed after approval"
+    mapping_path.write_text(json.dumps(mapping), encoding="utf-8")
+
+    applied = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "apply", str(package)],
+    )
+
+    assert applied.exit_code != 0
+    assert "mapping changed after approval" in applied.output
+    assert not list((vault_root / "10-personal" / "notes").rglob("*.md"))

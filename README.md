@@ -32,6 +32,9 @@ edifice migrate inventory --source obsidian --path /absolute/legacy-vault
 edifice migrate inventory --source craft --path /absolute/craft-export
 edifice migrate inventory --source coda --path /absolute/coda-export
 edifice migrate plan /absolute/migration-package
+edifice migrate approve /absolute/migration-package \
+  --source-prefix Essentials/ --route protected-note
+edifice migrate apply /absolute/migration-package
 edifice migrate verify /absolute/migration-package
 edifice migrate status
 edifice review
@@ -151,6 +154,21 @@ edifice migrate verify /absolute/path/to/package
 No legacy source or live Edifice note is changed by inventory, planning, or
 verification. The raw package remains local and unencrypted until the personal
 migration archive encryption path is available.
+
+Approve and apply one exact batch:
+
+```text
+edifice migrate approve PACKAGE \
+  --source-prefix Essentials/ \
+  --route protected-note
+
+edifice migrate apply PACKAGE
+```
+
+Approval is bound to the current mapping hash. Apply verifies the raw package,
+preflights every target, refuses different existing bytes, copies exact source
+content, rolls back newly created targets on failure, and records resumable
+apply evidence.
 
 Craft and Coda exports use the same pipeline:
 

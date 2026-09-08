@@ -179,6 +179,23 @@ edifice migrate status
 
 All mappings remain `review`. Applying selected notes is a later explicit step.
 
+Approve one exact batch:
+
+```text
+edifice migrate approve /absolute/path/to/package \
+  --source-prefix Essentials/ \
+  --route protected-note
+```
+
+Apply only approved mappings:
+
+```text
+edifice migrate apply /absolute/path/to/package
+```
+
+Imported protected notes preserve exact source bytes. The migration package
+holds provenance and apply evidence.
+
 Craft and Coda exports use the same commands:
 
 ```text

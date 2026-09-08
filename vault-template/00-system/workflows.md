@@ -21,6 +21,8 @@ created: 2026-09-07
 - `edifice pdf import-adobe apply` imports approved personal entries.
 - `edifice migrate inventory` creates a complete source snapshot and inventory.
 - `edifice migrate plan` creates review-only routing proposals.
+- `edifice migrate approve` binds a batch rule to the current mapping hash.
+- `edifice migrate apply` copies approved mappings into the live vault.
 - `edifice migrate verify` validates raw package bytes.
 - `edifice migrate status` lists resumable packages.
 - `edifice review` opens the current weekly review.
@@ -105,6 +107,10 @@ created: 2026-09-07
 13. Route legacy work-source candidates only to reviewed local `20-work`
     destinations while Sync remains disabled.
 14. Keep personal-cloud eligibility separate from local migration eligibility.
+15. Preflight every approved target before writing the batch.
+16. Preserve exact bytes for protected imported notes.
+17. Roll back new targets if apply fails.
+18. Keep semantic promotion separate from exact-copy migration.
 
 ## Daily start
 

@@ -35,6 +35,8 @@ Owner-facing commands:
 - `edifice pdf import-adobe apply`
 - `edifice migrate inventory`
 - `edifice migrate plan`
+- `edifice migrate approve`
+- `edifice migrate apply`
 - `edifice migrate verify`
 - `edifice migrate status`
 - `edifice review`
@@ -62,6 +64,8 @@ Owner-facing commands:
   completion.
 - Legacy source migrations use immutable machine-local packages, review-only
   mappings, explicit verification, and no source or live-note mutation.
+- Approved migration batches copy exact bytes into protected destinations with
+  hash-bound approval, conflict preflight, rollback, and resumable evidence.
 - Secrets, credentials, restricted personal data, and uncontrolled bulk
   exports are prohibited.
 - No synchronization.

@@ -1,3 +1,4 @@
+import fcntl
 import hashlib
 import json
 import os
@@ -7,6 +8,8 @@ import stat
 import tempfile
 import unicodedata
 import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +43,20 @@ class MigrationVerification:
     unavailable: int
     mismatched: int
     issues: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MigrationApprovalResult:
+    approved: int
+    already_approved: int
+    package_path: Path
+
+
+@dataclass(frozen=True)
+class MigrationApplyResult:
+    imported: int
+    already_imported: int
+    package_path: Path
 
 
 def inventory_obsidian_vault(
@@ -229,6 +246,246 @@ def plan_migration(
         package_path=package,
         item_count=len(items),
         markdown_count=markdown_count,
+    )
+
+
+def approve_migration_batch(
+    *,
+    package_path: Path,
+    migrations_root: Path,
+    vault_root: Path,
+    audit_root: Path,
+    source_prefix: str,
+    route: str,
+) -> MigrationApprovalResult:
+    """Approve one hash-bound migration batch without writing live notes."""
+    package = _validate_package_path(package_path, migrations_root)
+    verification = verify_migration_package(
+        package_path=package,
+        migrations_root=migrations_root,
+    )
+    if verification.unavailable or verification.mismatched:
+        raise click.ClickException("Migration package verification failed.")
+    normalized_prefix = source_prefix.strip().lstrip("/")
+    if not normalized_prefix or ".." in Path(normalized_prefix).parts:
+        raise click.ClickException("Migration source prefix is unsafe.")
+    if route not in {"protected-note", "planned"}:
+        raise click.ClickException(f"Unsupported migration route: {route}")
+
+    manifest_path = package / "manifest.json"
+    mapping_path = package / "mapping.json"
+    manifest = _load_json_object(manifest_path)
+    mapping = _load_json_object(mapping_path)
+    if _json_hash(mapping) != manifest.get("mapping_sha256"):
+        raise click.ClickException("Migration mapping changed after planning.")
+    items = cast(list[object], mapping["items"])
+    selected = [
+        cast(dict[str, object], item)
+        for item in items
+        if cast(str, cast(dict[str, object], item)["source_path"]).startswith(
+            normalized_prefix
+        )
+    ]
+    if not selected:
+        raise click.ClickException(
+            f"No migration mappings match source prefix: {normalized_prefix}"
+        )
+
+    approved = 0
+    already_approved = 0
+    approval_time = datetime.now(UTC).isoformat()
+    plan_mapping_hash = cast(str, manifest["mapping_sha256"])
+    for item in selected:
+        approved_target = _approval_target(item, route)
+        if (
+            item.get("decision") == "approved"
+            and item.get("approved_target") == approved_target
+        ):
+            already_approved += 1
+            continue
+        if item.get("decision") != "review":
+            raise click.ClickException(
+                f"Migration mapping is not reviewable: {item.get('source_path')}"
+            )
+        item["decision"] = "approved"
+        item["approved_target"] = approved_target
+        item["approval"] = {
+            "approved_at": approval_time,
+            "route": route,
+            "source_prefix": normalized_prefix,
+            "plan_mapping_sha256": plan_mapping_hash,
+        }
+        approved += 1
+    _validate_approved_targets(items)
+    mapping["status"] = "approved-partial"
+    mapping["decision_counts"] = _decision_counts(items)
+    manifest["status"] = "approved"
+    manifest["approved_mapping_sha256"] = _approval_hash(mapping)
+    previous_mapping = mapping_path.read_bytes()
+    previous_manifest = manifest_path.read_bytes()
+    try:
+        _write_json(mapping_path, mapping)
+        _write_json(manifest_path, manifest)
+    except Exception:
+        _replace_atomically(mapping_path, previous_mapping)
+        _replace_atomically(manifest_path, previous_manifest)
+        raise
+    inventory = _load_json_object(package / "inventory.json")
+    _replace_atomically(
+        package / "report.md",
+        _approval_report(manifest, inventory, mapping).encode(),
+    )
+    _write_migration_cockpit(
+        vault_root=vault_root,
+        package_path=package,
+        source_kind=cast(str, manifest["source_kind"]),
+        status="approved",
+        file_count=cast(int, inventory["file_count"]),
+        markdown_count=cast(int, mapping["markdown_count"]),
+    )
+    _append_migration_audit(
+        audit_root=audit_root,
+        event_type="migration.batch-approved",
+        package_path=package,
+        file_count=approved,
+        aggregate_hash=manifest["approved_mapping_sha256"],
+    )
+    return MigrationApprovalResult(
+        approved=approved,
+        already_approved=already_approved,
+        package_path=package,
+    )
+
+
+def apply_migration(
+    *,
+    package_path: Path,
+    migrations_root: Path,
+    vault_root: Path,
+    audit_root: Path,
+) -> MigrationApplyResult:
+    """Copy approved mappings into the live vault as one rollback-safe batch."""
+    package = _validate_package_path(package_path, migrations_root)
+    verification = verify_migration_package(
+        package_path=package,
+        migrations_root=migrations_root,
+    )
+    if verification.unavailable or verification.mismatched:
+        raise click.ClickException("Migration package verification failed.")
+    manifest_path = package / "manifest.json"
+    mapping_path = package / "mapping.json"
+
+    with _migration_apply_lock(audit_root, package.name):
+        manifest = _load_json_object(manifest_path)
+        mapping = _load_json_object(mapping_path)
+        approved_hash = manifest.get("approved_mapping_sha256")
+        if not isinstance(approved_hash, str):
+            raise click.ClickException("No migration batch has been approved.")
+        if _approval_hash(mapping) != approved_hash:
+            raise click.ClickException("Migration mapping changed after approval.")
+        items = cast(list[object], mapping["items"])
+        approved_items = [
+            cast(dict[str, object], item)
+            for item in items
+            if cast(dict[str, object], item).get("decision") == "approved"
+        ]
+        if not approved_items:
+            raise click.ClickException("No approved migration mappings.")
+
+        prepared = _preflight_apply(
+            package=package,
+            vault_root=vault_root,
+            items=approved_items,
+        )
+        previous_mapping = mapping_path.read_bytes()
+        previous_manifest = manifest_path.read_bytes()
+        created_targets: list[Path] = []
+        imported = 0
+        already_imported = 0
+        try:
+            for item, source_path, target_path, source_hash, existing in prepared:
+                if existing:
+                    already_imported += 1
+                else:
+                    _write_live_file(target_path, source_path.read_bytes())
+                    created_targets.append(target_path)
+                    imported += 1
+                if _sha256(target_path.read_bytes()) != source_hash:
+                    raise click.ClickException(
+                        f"Migrated note hash mismatch: {target_path}"
+                    )
+                item["apply_status"] = "imported"
+                item["target_sha256"] = source_hash
+                item["imported_at"] = datetime.now(UTC).isoformat()
+            remaining_review = sum(
+                cast(dict[str, object], item).get("decision") == "review"
+                for item in items
+            )
+            mapping["status"] = "applied-partial" if remaining_review else "applied"
+            mapping["decision_counts"] = _decision_counts(items)
+            manifest["status"] = cast(str, mapping["status"])
+            manifest["last_apply_at"] = datetime.now(UTC).isoformat()
+            manifest["last_apply_imported"] = imported
+            manifest["last_apply_already_imported"] = already_imported
+            _write_json(mapping_path, mapping)
+            _write_json(manifest_path, manifest)
+            apply_record: dict[str, object] = {
+                "schema_version": 1,
+                "run_id": f"migration-apply-{new_uuid7()}",
+                "created_at": datetime.now(UTC).isoformat(),
+                "approved_mapping_sha256": approved_hash,
+                "imported": imported,
+                "already_imported": already_imported,
+                "remaining_review": remaining_review,
+                "target_hashes": [
+                    {
+                        "source_id": item["source_id"],
+                        "target": item["approved_target"],
+                        "sha256": item["target_sha256"],
+                    }
+                    for item in approved_items
+                ],
+            }
+            _write_json(
+                package
+                / "apply"
+                / (
+                    f"{datetime.now(UTC).strftime('%Y-%m-%d-%H%M%S')}-"
+                    f"{str(new_uuid7())[:8]}.json"
+                ),
+                apply_record,
+            )
+        except Exception:
+            _replace_atomically(mapping_path, previous_mapping)
+            _replace_atomically(manifest_path, previous_manifest)
+            for target in created_targets:
+                target.unlink(missing_ok=True)
+            raise
+
+        inventory = _load_json_object(package / "inventory.json")
+        _replace_atomically(
+            package / "report.md",
+            _apply_report(manifest, inventory, mapping).encode(),
+        )
+        _write_migration_cockpit(
+            vault_root=vault_root,
+            package_path=package,
+            source_kind=cast(str, manifest["source_kind"]),
+            status=cast(str, mapping["status"]),
+            file_count=cast(int, inventory["file_count"]),
+            markdown_count=cast(int, mapping["markdown_count"]),
+        )
+        _append_migration_audit(
+            audit_root=audit_root,
+            event_type="migration.batch-applied",
+            package_path=package,
+            file_count=imported,
+            aggregate_hash=approved_hash,
+        )
+    return MigrationApplyResult(
+        imported=imported,
+        already_imported=already_imported,
+        package_path=package,
     )
 
 
@@ -675,6 +932,151 @@ def _candidate_counts(items: list[dict[str, object]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _decision_counts(items: list[object]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        decision = cast(str, cast(dict[str, object], item)["decision"])
+        counts[decision] = counts.get(decision, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _approval_target(item: dict[str, object], route: str) -> str:
+    source_path = Path(cast(str, item["source_path"]))
+    if route == "protected-note":
+        if item.get("candidate_type") == "work-source":
+            raise click.ClickException(
+                f"Work-source mapping requires its planned route: {source_path}"
+            )
+        filename = _kebab_filename(source_path.name)
+        if source_path.suffix.casefold() == ".txt":
+            filename = f"{Path(filename).stem}.md"
+        return (Path("10-personal/notes/imported") / filename).as_posix()
+    proposed_target = item.get("proposed_target")
+    if not isinstance(proposed_target, str):
+        raise click.ClickException(
+            f"Migration mapping has no planned target: {source_path}"
+        )
+    return proposed_target
+
+
+def _validate_approved_targets(items: list[object]) -> None:
+    targets: dict[str, str] = {}
+    for item in items:
+        mapping = cast(dict[str, object], item)
+        if mapping.get("decision") != "approved":
+            continue
+        target = cast(str, mapping["approved_target"])
+        _validate_live_target(Path(target))
+        source_hash = cast(str, mapping["source_sha256"])
+        prior_hash = targets.get(target)
+        if prior_hash is not None and prior_hash != source_hash:
+            raise click.ClickException(f"Approved migration target collision: {target}")
+        targets[target] = source_hash
+
+
+def _approval_hash(mapping: dict[str, object]) -> str:
+    items: list[dict[str, object]] = []
+    for item in cast(list[object], mapping["items"]):
+        original = cast(dict[str, object], item)
+        items.append(
+            {
+                key: value
+                for key, value in original.items()
+                if key not in {"apply_status", "target_sha256", "imported_at"}
+            }
+        )
+    payload: dict[str, object] = {
+        "schema_version": mapping["schema_version"],
+        "package_id": mapping["package_id"],
+        "item_count": mapping["item_count"],
+        "markdown_count": mapping["markdown_count"],
+        "candidate_counts": mapping["candidate_counts"],
+        "items": items,
+    }
+    return _json_hash(payload)
+
+
+def _preflight_apply(
+    *,
+    package: Path,
+    vault_root: Path,
+    items: list[dict[str, object]],
+) -> list[tuple[dict[str, object], Path, Path, str, bool]]:
+    prepared: list[tuple[dict[str, object], Path, Path, str, bool]] = []
+    targets: set[Path] = set()
+    for item in items:
+        source_relative = Path(cast(str, item["source_path"]))
+        if source_relative.is_absolute() or ".." in source_relative.parts:
+            raise click.ClickException(
+                f"Unsafe migration source path: {source_relative}"
+            )
+        source_path = package / "raw" / source_relative
+        source_hash = cast(str, item["source_sha256"])
+        if (
+            not source_path.is_file()
+            or _sha256(source_path.read_bytes()) != source_hash
+        ):
+            raise click.ClickException(
+                f"Migration source hash mismatch: {source_relative}"
+            )
+        target_relative = Path(cast(str, item["approved_target"]))
+        _validate_live_target(target_relative)
+        target_path = vault_root / target_relative
+        if target_path in targets:
+            raise click.ClickException(
+                f"Approved migration target collision: {target_relative}"
+            )
+        targets.add(target_path)
+        existing = target_path.exists()
+        if existing and (
+            not target_path.is_file()
+            or _sha256(target_path.read_bytes()) != source_hash
+        ):
+            raise click.ClickException(
+                f"Refusing to overwrite a different migrated note: {target_relative}"
+            )
+        prepared.append((item, source_path, target_path, source_hash, existing))
+    return prepared
+
+
+def _validate_live_target(target: Path) -> None:
+    if target.is_absolute() or ".." in target.parts:
+        raise click.ClickException(f"Unsafe migration target: {target}")
+    allowed_roots = (
+        Path("10-personal/notes/imported"),
+        Path("10-personal/operations"),
+        Path("10-personal/artifacts/imported"),
+        Path("10-personal/sources/imported"),
+        Path("20-work/references/imported"),
+    )
+    if not any(target.is_relative_to(root) for root in allowed_roots):
+        raise click.ClickException(
+            f"Migration target is outside allowed paths: {target}"
+        )
+
+
+def _write_live_file(target: Path, content: bytes) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=target.parent,
+        prefix=f".{target.name}.",
+        delete=False,
+    ) as temporary:
+        temporary.write(content)
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    try:
+        os.link(temporary_path, target)
+    except FileExistsError:
+        if _sha256(target.read_bytes()) != _sha256(content):
+            raise click.ClickException(
+                f"Refusing to overwrite a different migrated note: {target}"
+            ) from None
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
 def _markdown_title(content: str, fallback: str) -> str:
     match = re.search(r"(?m)^#\s+(.+?)\s*$", content)
     if not match:
@@ -872,6 +1274,67 @@ def _plan_report(
 
 Every proposed mapping remains `review`.
 """
+
+
+def _approval_report(
+    manifest: dict[str, object],
+    inventory: dict[str, object],
+    mapping: dict[str, object],
+) -> str:
+    counts = cast(dict[str, int], mapping["decision_counts"])
+    return f"""# {cast(str, manifest["source_kind"]).title()} migration package
+
+- Status: `approved`
+- Evidence: `verified`
+- Files: `{inventory["file_count"]}`
+- Approved mappings: `{counts.get("approved", 0)}`
+- Review mappings: `{counts.get("review", 0)}`
+- Source mutation: `not-applicable`
+- Live-vault import: `not-applicable`
+
+Approval is bound to `{manifest["approved_mapping_sha256"]}`.
+"""
+
+
+def _apply_report(
+    manifest: dict[str, object],
+    inventory: dict[str, object],
+    mapping: dict[str, object],
+) -> str:
+    counts = cast(dict[str, int], mapping["decision_counts"])
+    imported = sum(
+        cast(dict[str, object], item).get("apply_status") == "imported"
+        for item in cast(list[object], mapping["items"])
+    )
+    return f"""# {cast(str, manifest["source_kind"]).title()} migration package
+
+- Status: `{mapping["status"]}`
+- Evidence: `verified`
+- Files: `{inventory["file_count"]}`
+- Imported mappings: `{imported}`
+- Approved mappings: `{counts.get("approved", 0)}`
+- Review mappings: `{counts.get("review", 0)}`
+- Source mutation: `not-applicable`
+
+Imported targets preserve exact source bytes. Semantic promotion remains a
+separate review.
+"""
+
+
+@contextmanager
+def _migration_apply_lock(
+    audit_root: Path,
+    package_name: str,
+) -> Generator[None]:
+    audit_root.mkdir(parents=True, exist_ok=True)
+    lock_path = audit_root / f"migration-apply-{package_name}.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
 
 
 def _append_migration_audit(

@@ -21,6 +21,8 @@ from edifice.adobe_import import (
 )
 from edifice.identifiers import new_uuid7
 from edifice.migration import (
+    apply_migration,
+    approve_migration_batch,
     inventory_source_directory,
     migration_status,
     plan_migration,
@@ -55,6 +57,7 @@ REQUIRED_VAULT_FILES = (
     Path("00-system/engineering/owner-practices.md"),
     Path("01-inbox/inbox.md"),
     Path("10-personal/artifacts/AGENTS.md"),
+    Path("10-personal/notes/imported/AGENTS.md"),
     Path("10-personal/operations/artifacts/imports/AGENTS.md"),
     Path("10-personal/operations/migrations/AGENTS.md"),
     Path(".obsidian/core-plugins.json"),
@@ -555,6 +558,61 @@ def plan_migration_command(paths: RuntimePaths, package_path: Path) -> None:
         f"Mappings: {result.item_count}; Markdown notes: {result.markdown_count}."
     )
     click.echo("Approved mappings: 0.")
+
+
+@migrate_command.command("approve")
+@click.argument(
+    "package_path",
+    type=click.Path(path_type=Path, file_okay=False),
+)
+@click.option("--source-prefix", required=True)
+@click.option(
+    "--route",
+    required=True,
+    type=click.Choice(["protected-note", "planned"], case_sensitive=False),
+)
+@click.pass_obj
+def approve_migration_command(
+    paths: RuntimePaths,
+    package_path: Path,
+    source_prefix: str,
+    route: str,
+) -> None:
+    """Approve one source-prefix batch against the current mapping hash."""
+    migrations_root = _require_migrations_root(paths)
+    result = approve_migration_batch(
+        package_path=package_path,
+        migrations_root=migrations_root,
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        source_prefix=source_prefix,
+        route=route,
+    )
+    click.echo(
+        f"Approved: {result.approved}; already approved: {result.already_approved}."
+    )
+    click.echo(f"Package: {result.package_path}.")
+
+
+@migrate_command.command("apply")
+@click.argument(
+    "package_path",
+    type=click.Path(path_type=Path, file_okay=False),
+)
+@click.pass_obj
+def apply_migration_command(paths: RuntimePaths, package_path: Path) -> None:
+    """Copy approved mappings into the live vault."""
+    migrations_root = _require_migrations_root(paths)
+    result = apply_migration(
+        package_path=package_path,
+        migrations_root=migrations_root,
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+    )
+    click.echo(
+        f"Imported: {result.imported}; already imported: {result.already_imported}."
+    )
+    click.echo(f"Package: {result.package_path}.")
 
 
 @migrate_command.command("verify")

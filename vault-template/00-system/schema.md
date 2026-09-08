@@ -128,3 +128,16 @@ proposed/
 - Packages remain outside the live vault and normal Git history.
 - Encryption remains unavailable until the personal archive key path is
   qualified.
+
+## Migration approval and apply
+
+- Approval selects an exact source-path prefix and route.
+- The approval hash covers source identity, proposed content, decision, and
+  target while excluding only later apply-status fields.
+- `protected-note` routes exact text bytes to
+  `10-personal/notes/imported`.
+- Apply verifies all raw hashes and target conflicts before writing anything.
+- Apply never overwrites different bytes.
+- New targets are rolled back if the batch fails.
+- Imported content remains unchanged; semantic promotion is separate.
+- Mapping and apply records preserve provenance and resumability.
