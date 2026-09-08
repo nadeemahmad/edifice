@@ -5,6 +5,7 @@ project_root="${0:A:h:h}"
 
 export EDIFICE_VAULT="${EDIFICE_VAULT:-$HOME/Obsidian/edifice}"
 export EDIFICE_AUDIT_ROOT="${EDIFICE_AUDIT_ROOT:-$HOME/Library/Logs/edifice/personal/audit}"
+export EDIFICE_PERSONAL_LIBRARY="${EDIFICE_PERSONAL_LIBRARY:-$HOME/My Drive/Library}"
 export PYTHONPATH="$project_root/src${PYTHONPATH:+:$PYTHONPATH}"
 
 exec "$project_root/.venv/bin/python" -m edifice "$@"

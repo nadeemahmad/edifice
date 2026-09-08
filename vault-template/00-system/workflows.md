@@ -14,6 +14,8 @@ created: 2026-09-07
 - `edifice context gather` creates or refreshes bounded work context.
 - `edifice pdf add` copies and catalogs one intentionally selected PDF.
 - `edifice pdf inventory` verifies both local PDF catalogs.
+- `edifice pdf backup-personal` reconciles every personal PDF to the configured
+  Drive library.
 - `edifice pdf import-adobe plan` creates a non-importing Adobe review
   manifest.
 - `edifice pdf import-adobe apply` imports approved personal entries.
@@ -61,6 +63,9 @@ created: 2026-09-07
 8. Run `edifice pdf inventory` to detect missing, changed, or uncataloged
    copies.
 9. Do not delete the source, upload work content, or move an external file.
+10. Reconcile personal PDFs to `~/My Drive/Library`.
+11. Treat local Drive hashes as verified and remote sync status as unavailable
+    until a separate read-back check succeeds.
 
 ## Adobe PDF import
 

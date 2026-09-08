@@ -151,6 +151,13 @@ class PdfInventory:
 
 
 @dataclass(frozen=True)
+class PersonalBackupResult:
+    copied: int
+    verified: int
+    drive_library_root: Path
+
+
+@dataclass(frozen=True)
 class _TitleCandidate:
     title: str
     start: int
@@ -451,6 +458,93 @@ def inventory_pdfs(vault_root: Path) -> PdfInventory:
         mismatched=mismatched,
         uncataloged=len(uncataloged_paths),
         issues=tuple(issues),
+    )
+
+
+def backup_personal_pdfs(
+    *,
+    vault_root: Path,
+    audit_root: Path,
+    drive_library_root: Path,
+) -> PersonalBackupResult:
+    """Copy every cataloged personal PDF into a Drive-backed library."""
+    if not drive_library_root.is_absolute():
+        raise click.ClickException("Personal Drive library path must be absolute.")
+    normalized_drive_root = drive_library_root.expanduser().resolve()
+    settings = _scope_settings(vault_root, "personal")
+    local_pdf_root = settings.pdf_root.resolve()
+    copied = 0
+    verified = 0
+
+    with _pdf_lock(audit_root, "personal"):
+        index = _load_index(settings.catalog_index, "personal")
+        artifacts = cast(list[object], index["artifacts"])
+        for item in artifacts:
+            artifact = cast(dict[str, object], item)
+            source_path = (vault_root / cast(str, artifact["storage_path"])).resolve()
+            if not source_path.is_relative_to(local_pdf_root):
+                raise click.ClickException(
+                    f"Personal PDF is outside the managed library: {source_path}"
+                )
+            if not source_path.is_file():
+                raise click.ClickException(
+                    f"Personal PDF is unavailable: {source_path}"
+                )
+            relative_path = source_path.relative_to(local_pdf_root)
+            destination_path = normalized_drive_root / relative_path
+            expected_hash = cast(str, artifact["sha256"])
+            source_content = source_path.read_bytes()
+            if _sha256(source_content) != expected_hash:
+                raise click.ClickException(f"Personal PDF hash mismatch: {source_path}")
+            if destination_path.exists():
+                if (
+                    not destination_path.is_file()
+                    or _sha256(destination_path.read_bytes()) != expected_hash
+                ):
+                    raise click.ClickException(
+                        "Refusing to overwrite different Drive bytes: "
+                        f"{destination_path}"
+                    )
+            else:
+                _write_exclusive_file(destination_path, source_content)
+                copied += 1
+            if _sha256(destination_path.read_bytes()) != expected_hash:
+                raise click.ClickException(
+                    f"Drive copy hash mismatch: {destination_path}"
+                )
+            verified += 1
+            artifact["drive_path"] = (
+                Path(normalized_drive_root.name) / relative_path
+            ).as_posix()
+            artifact["drive_copy_status"] = "local-hash-verified"
+            artifact["drive_sync_status"] = "unavailable"
+            artifact["drive_verified_at"] = datetime.now(UTC).isoformat()
+
+        _replace_atomically(
+            settings.catalog_index,
+            (
+                json.dumps(index, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+            ).encode(),
+        )
+        _replace_atomically(
+            settings.catalog_markdown,
+            _render_catalog(
+                index=index,
+                vault_root=vault_root,
+                catalog_path=settings.catalog_markdown,
+            ).encode(),
+        )
+        _append_pdf_backup_audit_event(
+            audit_root=audit_root,
+            copied=copied,
+            verified=verified,
+            drive_library_root=normalized_drive_root,
+        )
+
+    return PersonalBackupResult(
+        copied=copied,
+        verified=verified,
+        drive_library_root=normalized_drive_root,
     )
 
 
@@ -965,21 +1059,23 @@ def _render_catalog(
         "",
         f"# {scope.title()} PDF catalog",
         "",
-        "| Title | Kind | File | Classification | SHA-256 |",
-        "| --- | --- | --- | --- | --- |",
+        "| Title | Kind | File | Classification | Drive | SHA-256 |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     for item in cast(list[object], index["artifacts"]):
         artifact = cast(dict[str, object], item)
         storage_path = vault_root / cast(str, artifact["storage_path"])
         relative_link = os.path.relpath(storage_path, catalog_path.parent)
         title = _catalog_text(cast(str, artifact["title"]))
+        drive_status = cast(str, artifact.get("drive_copy_status", "not-configured"))
         lines.append(
             f"| {title} | `{artifact['document_kind']}` | "
             f"[{artifact['canonical_filename']}](<{Path(relative_link).as_posix()}>) | "
-            f"`{artifact['classification']}` | `{artifact['sha256']}` |"
+            f"`{artifact['classification']}` | `{drive_status}` | "
+            f"`{artifact['sha256']}` |"
         )
     if len(lines) == 10:
-        lines.append("| No PDFs cataloged. |  |  |  |  |")
+        lines.append("| No PDFs cataloged. |  |  |  |  |  |")
     return "\n".join(lines) + "\n"
 
 
@@ -1005,6 +1101,36 @@ def _write_new_file(path: Path, content: bytes) -> None:
             raise click.ClickException(f"Refusing to overwrite PDF: {path}") from None
     finally:
         temporary_path.unlink(missing_ok=True)
+
+
+def _write_exclusive_file(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(
+            path,
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            0o600,
+        )
+    except FileExistsError:
+        if _sha256(path.read_bytes()) != _sha256(content):
+            raise click.ClickException(
+                f"Refusing to overwrite different Drive bytes: {path}"
+            ) from None
+        return
+    try:
+        view = memoryview(content)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("Drive copy write made no progress.")
+            view = view[written:]
+        os.fsync(descriptor)
+    except Exception:
+        os.close(descriptor)
+        path.unlink(missing_ok=True)
+        raise
+    else:
+        os.close(descriptor)
 
 
 def _replace_atomically(path: Path, content: bytes) -> None:
@@ -1054,6 +1180,41 @@ def _append_pdf_audit_event(
         "sha256": artifact["sha256"],
         "classification": artifact["classification"],
         "external_mutation": False,
+    }
+    encoded = f"{json.dumps(event, sort_keys=True, separators=(',', ':'))}\n".encode()
+    descriptor = os.open(
+        audit_path,
+        os.O_APPEND | os.O_CREAT | os.O_WRONLY,
+        0o600,
+    )
+    try:
+        os.write(descriptor, encoded)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _append_pdf_backup_audit_event(
+    *,
+    audit_root: Path,
+    copied: int,
+    verified: int,
+    drive_library_root: Path,
+) -> None:
+    audit_root.mkdir(parents=True, exist_ok=True)
+    audit_path = audit_root / f"{datetime.now(UTC).date().isoformat()}.jsonl"
+    event = {
+        "schema_version": 1,
+        "event_id": f"event-{new_uuid7()}",
+        "timestamp": datetime.now(UTC).isoformat(),
+        "profile": "personal",
+        "event_type": "pdf.drive-backed",
+        "target": f"file://{drive_library_root}",
+        "copied": copied,
+        "verified": verified,
+        "drive_copy_status": "local-hash-verified",
+        "drive_sync_status": "unavailable",
+        "external_mutation": True,
     }
     encoded = f"{json.dumps(event, sort_keys=True, separators=(',', ':'))}\n".encode()
     descriptor = os.open(

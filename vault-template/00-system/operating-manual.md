@@ -30,6 +30,7 @@ Owner-facing commands:
 - `edifice context gather`
 - `edifice pdf add`
 - `edifice pdf inventory`
+- `edifice pdf backup-personal`
 - `edifice pdf import-adobe plan`
 - `edifice pdf import-adobe apply`
 - `edifice review`
@@ -52,6 +53,9 @@ Owner-facing commands:
   explicit owner overrides for uncertain names.
 - Adobe imports use a review manifest, source hashes, explicit personal-scope
   confirmation, resumable apply, and no Adobe mutation.
+- Personal PDF additions and Adobe applies reconcile to
+  `~/My Drive/Library`; local hashes are verified without claiming remote sync
+  completion.
 - Secrets, credentials, restricted personal data, and uncontrolled bulk
   exports are prohibited.
 - No synchronization.

@@ -80,6 +80,10 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - A same-name file with different bytes receives a short SHA-256 suffix.
 - PDF byte stores are excluded from the vault's local Git history; catalogs,
   manifests, and governance remain versioned.
+- Personal catalog entries record `drive_path`, `drive_copy_status`,
+  `drive_sync_status`, and `drive_verified_at` after reconciliation.
+- `local-hash-verified` proves bytes in the mounted Drive folder. It does not
+  prove remote upload completion.
 
 ## Adobe import manifest
 

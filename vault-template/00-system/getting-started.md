@@ -109,6 +109,16 @@ edifice pdf inventory
 The inventory checks both scopes for verified hashes, missing files, changed
 bytes, and uncataloged PDFs.
 
+Back up every personal PDF to the configured personal Drive library:
+
+```text
+edifice pdf backup-personal
+```
+
+The installed launcher uses `~/My Drive/Library`. Personal `pdf add` and Adobe
+apply commands run this reconciliation automatically. The command never
+overwrites different Drive bytes.
+
 ## Import from Adobe Cloud
 
 Plan from Acrobat's locally materialized cloud cache:
@@ -184,8 +194,9 @@ Verifies the minimum vault structure and confirms Obsidian Sync is disabled.
 5. Run `edifice context gather` for the selected JIRA issue and repository.
 6. Use `edifice pdf add` for any PDF that should become a managed local copy.
 7. Use `edifice pdf import-adobe plan` for staged Adobe consolidation.
-8. Add or edit manual context directly in Obsidian.
-9. Capture interruptions without changing focus.
-10. Update the project resume point and daily closeout.
-11. Run `edifice status`.
-12. Use `edifice review` during the weekly review.
+8. Run `edifice pdf backup-personal` to repair or verify Drive backing.
+9. Add or edit manual context directly in Obsidian.
+10. Capture interruptions without changing focus.
+11. Update the project resume point and daily closeout.
+12. Run `edifice status`.
+13. Use `edifice review` during the weekly review.

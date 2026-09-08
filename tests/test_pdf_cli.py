@@ -11,6 +11,7 @@ from edifice.pdf_library import PdfMetadata, propose_pdf_naming
 
 
 def _write_pdf(path: Path, marker: bytes = b"first") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"%PDF-1.7\n" + marker + b"\n%%EOF\n")
     return path
 
@@ -38,6 +39,7 @@ def _invoke_add(
     audit_root: Path,
     source_pdf: Path,
     extra_arguments: list[str] | None = None,
+    environment: dict[str, str] | None = None,
 ):
     return CliRunner().invoke(
         cli,
@@ -55,6 +57,7 @@ def _invoke_add(
             "personal",
             *(extra_arguments or []),
         ],
+        env=environment,
     )
 
 
@@ -559,3 +562,76 @@ def test_pdf_add_rolls_back_new_file_when_catalog_write_fails(
     assert not (
         vault_root / "10-personal" / "operations" / "artifacts" / "pdf-catalog.json"
     ).exists()
+
+
+def test_pdf_add_backs_personal_file_to_configured_drive_library(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_metadata(monkeypatch, _metadata())
+    source_pdf = _write_pdf(tmp_path / "document.pdf")
+    vault_root = tmp_path / "vault"
+    drive_library = tmp_path / "My Drive" / "Library"
+
+    result = _invoke_add(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        source_pdf=source_pdf,
+        environment={"EDIFICE_PERSONAL_LIBRARY": str(drive_library)},
+    )
+
+    drive_pdf = (
+        drive_library / "inbox" / "nadia-ahmad-reliable-context-gathering-2026.pdf"
+    )
+    catalog = json.loads(
+        (
+            vault_root / "10-personal" / "operations" / "artifacts" / "pdf-catalog.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert result.exit_code == 0
+    assert drive_pdf.read_bytes() == source_pdf.read_bytes()
+    artifact = catalog["artifacts"][0]
+    assert artifact["drive_copy_status"] == "local-hash-verified"
+    assert artifact["drive_sync_status"] == "unavailable"
+    assert artifact["drive_path"] == (
+        "Library/inbox/nadia-ahmad-reliable-context-gathering-2026.pdf"
+    )
+
+
+def test_pdf_backup_refuses_to_overwrite_different_drive_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_metadata(monkeypatch, _metadata())
+    source_pdf = _write_pdf(tmp_path / "document.pdf")
+    vault_root = tmp_path / "vault"
+    added = _invoke_add(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        source_pdf=source_pdf,
+    )
+    assert added.exit_code == 0
+    drive_library = tmp_path / "My Drive" / "Library"
+    drive_pdf = (
+        drive_library / "inbox" / "nadia-ahmad-reliable-context-gathering-2026.pdf"
+    )
+    _write_pdf(drive_pdf, b"different")
+    before = drive_pdf.read_bytes()
+
+    backed_up = CliRunner().invoke(
+        cli,
+        [
+            "--vault",
+            str(vault_root),
+            "--audit-root",
+            str(tmp_path / "audit"),
+            "--personal-library",
+            str(drive_library),
+            "pdf",
+            "backup-personal",
+        ],
+    )
+
+    assert backed_up.exit_code != 0
+    assert "Refusing to overwrite different Drive bytes" in backed_up.output
+    assert drive_pdf.read_bytes() == before

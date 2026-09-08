@@ -20,7 +20,12 @@ from edifice.adobe_import import (
     plan_adobe_import,
 )
 from edifice.identifiers import new_uuid7
-from edifice.pdf_library import DOCUMENT_KINDS, add_pdf, inventory_pdfs
+from edifice.pdf_library import (
+    DOCUMENT_KINDS,
+    add_pdf,
+    backup_personal_pdfs,
+    inventory_pdfs,
+)
 from edifice.work_context import gather_work_context
 
 
@@ -28,6 +33,7 @@ from edifice.work_context import gather_work_context
 class RuntimePaths:
     vault_root: Path
     audit_root: Path
+    personal_library_root: Path | None
     dry_run: bool
 
 
@@ -66,18 +72,27 @@ REQUIRED_WORK_FILES = (
     required=True,
     type=click.Path(path_type=Path, file_okay=False),
 )
+@click.option(
+    "--personal-library",
+    "personal_library_root",
+    envvar="EDIFICE_PERSONAL_LIBRARY",
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Personal Google Drive library path.",
+)
 @click.option("--dry-run", is_flag=True, help="Show effects without opening Obsidian.")
 @click.pass_context
 def cli(
     context: click.Context,
     vault_root: Path,
     audit_root: Path,
+    personal_library_root: Path | None,
     dry_run: bool,
 ) -> None:
     """Operate the local Edifice system."""
     context.obj = RuntimePaths(
         vault_root=vault_root,
         audit_root=audit_root,
+        personal_library_root=personal_library_root,
         dry_run=dry_run,
     )
 
@@ -322,6 +337,15 @@ def add_pdf_command(
         return
     click.echo(f"Added PDF: {result.storage_path}.")
     click.echo(f"Catalog: {result.catalog_path}.")
+    if scope == "personal" and paths.personal_library_root is not None:
+        backup = backup_personal_pdfs(
+            vault_root=paths.vault_root,
+            audit_root=paths.audit_root,
+            drive_library_root=paths.personal_library_root,
+        )
+        click.echo(
+            f"Drive library: {backup.copied} copied, {backup.verified} hash-verified."
+        )
 
 
 @pdf_command.command("inventory")
@@ -339,6 +363,35 @@ def inventory_pdf_command(paths: RuntimePaths) -> None:
     )
     if inventory.unavailable or inventory.mismatched or inventory.uncataloged:
         raise click.ClickException("PDF inventory has unresolved items.")
+
+
+@pdf_command.command("backup-personal")
+@click.option(
+    "--destination",
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Override the configured personal Google Drive library.",
+)
+@click.pass_obj
+def backup_personal_pdf_command(
+    paths: RuntimePaths,
+    destination: Path | None,
+) -> None:
+    """Copy and verify every personal PDF in the Drive library."""
+    drive_library_root = destination or paths.personal_library_root
+    if drive_library_root is None:
+        raise click.ClickException(
+            "Personal library is not configured. Set EDIFICE_PERSONAL_LIBRARY "
+            "or pass --destination."
+        )
+    result = backup_personal_pdfs(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        drive_library_root=drive_library_root,
+    )
+    click.echo(
+        f"Drive library: {result.copied} copied, {result.verified} hash-verified."
+    )
+    click.echo("Drive sync status: unavailable.")
 
 
 @pdf_command.group("import-adobe")
@@ -415,6 +468,16 @@ def apply_adobe_command(
         f"skipped: {result.skipped}."
     )
     click.echo(f"Manifest: {result.manifest_path}.")
+    if paths.personal_library_root is not None:
+        backup = backup_personal_pdfs(
+            vault_root=paths.vault_root,
+            audit_root=paths.audit_root,
+            drive_library_root=paths.personal_library_root,
+        )
+        click.echo(
+            f"Drive library: {backup.copied} copied, {backup.verified} hash-verified."
+        )
+        click.echo("Drive sync status: unavailable.")
 
 
 @cli.command()

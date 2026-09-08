@@ -24,6 +24,7 @@ edifice context gather --jira KEY --repo /absolute/repository/path \
 edifice pdf add /absolute/path/document.pdf \
   --scope personal --classification personal
 edifice pdf inventory
+edifice pdf backup-personal
 edifice pdf import-adobe plan
 edifice pdf import-adobe apply /absolute/path/manifest.json \
   --allow-incomplete-source --confirm-all-personal
@@ -58,6 +59,17 @@ low-confidence name.
 `pdf add` extracts local PDFKit metadata and bounded first-page text, proposes
 a lowercase kebab-case filename, copies exact bytes into the local Edifice
 library, and updates a JSON-backed Markdown catalog.
+
+The installed launcher configures the personal Drive library as:
+
+```text
+~/My Drive/Library
+```
+
+Every successful personal `pdf add` and Adobe import apply reconciles the full
+personal catalog to that folder. `pdf backup-personal` can be run manually at
+any time. Drive copies are hash-verified locally; Google Drive upload status
+remains unavailable until a separate Drive read-back path is qualified.
 
 Personal PDFs use:
 
