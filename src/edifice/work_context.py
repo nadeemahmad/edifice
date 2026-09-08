@@ -17,11 +17,11 @@ import click
 
 from edifice.context_worker import EVIDENCE_STATUSES, gather_with_codex
 from edifice.identifiers import new_uuid7
+from edifice.pdf_library import add_pdf
 
 GENERATED_START = "<!-- edifice:generated-context:start -->"
 GENERATED_END = "<!-- edifice:generated-context:end -->"
 JIRA_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+-[1-9][0-9]*$")
-SAFE_FILENAME_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -32,11 +32,9 @@ class PdfCopyRequest:
 
 @dataclass(frozen=True)
 class PreparedPdf:
-    source_path: Path
     destination_path: Path
     relative_link: str
     source_url: str
-    content: bytes
     sha256: str
     size_bytes: int
 
@@ -60,6 +58,7 @@ def gather_work_context(
     links: tuple[str, ...],
     pdf_urls: tuple[str, ...],
     pdf_copies: tuple[tuple[Path, str], ...],
+    accept_pdf_name: bool,
     codex_binary: str,
 ) -> GatherResult:
     """Gather and persist one bounded, refreshable work-context note."""
@@ -96,10 +95,13 @@ def gather_work_context(
         codex_binary=codex_binary,
     )
     prepared_pdfs = tuple(
-        _prepare_pdf(
+        _catalog_pdf(
             request=request,
             vault_root=vault_root,
-            jira_key=normalized_key,
+            audit_root=audit_root,
+            context_note_path=note_path,
+            classification=classification,
+            accept_name=accept_pdf_name,
         )
         for request in copy_requests
     )
@@ -155,9 +157,6 @@ def gather_work_context(
         )
         after = note.encode("utf-8")
 
-        _preflight_pdf_destinations(prepared_pdfs)
-        for prepared_pdf in prepared_pdfs:
-            _copy_pdf_without_overwrite(prepared_pdf)
         _replace_atomically(note_path, after)
         run_report_path = _write_run_report(
             vault_root=vault_root,
@@ -238,31 +237,41 @@ def _validate_pdf_path(source_path: Path) -> Path:
     return resolved
 
 
-def _prepare_pdf(
+def _catalog_pdf(
     *,
     request: PdfCopyRequest,
     vault_root: Path,
-    jira_key: str,
+    audit_root: Path,
+    context_note_path: Path,
+    classification: str,
+    accept_name: bool,
 ) -> PreparedPdf:
-    content = request.source_path.read_bytes()
-    filename = _kebab_pdf_filename(request.source_path.stem)
-    relative_path = Path("20-work/references/pdfs") / jira_key.lower() / filename
-    return PreparedPdf(
-        source_path=request.source_path,
-        destination_path=vault_root / relative_path,
-        relative_link=f"../../references/pdfs/{jira_key.lower()}/{filename}",
+    result = add_pdf(
+        vault_root=vault_root,
+        audit_root=audit_root,
+        source_pdf=request.source_path,
+        scope="work",
+        classification=classification,
         source_url=request.source_url,
-        content=content,
-        sha256=_sha256(content),
-        size_bytes=len(content),
+        document_kind=None,
+        title=None,
+        creator=None,
+        year=None,
+        version=None,
+        accept_name=accept_name,
+        dry_run=False,
     )
-
-
-def _kebab_pdf_filename(stem: str) -> str:
-    normalized = SAFE_FILENAME_PATTERN.sub("-", stem.lower()).strip("-")
-    if not normalized:
-        normalized = "document"
-    return f"{normalized}.pdf"
+    destination_path = vault_root / result.storage_path
+    relative_link = Path(
+        os.path.relpath(destination_path, context_note_path.parent)
+    ).as_posix()
+    return PreparedPdf(
+        destination_path=destination_path,
+        relative_link=relative_link,
+        source_url=request.source_url,
+        sha256=result.sha256,
+        size_bytes=result.size_bytes,
+    )
 
 
 def _new_context_note(
@@ -584,48 +593,6 @@ def _safe_code(value: str) -> str:
 
 def _safe_url(value: str) -> str:
     return value.replace("<", "%3C").replace(">", "%3E").replace(" ", "%20")
-
-
-def _preflight_pdf_destinations(prepared_pdfs: tuple[PreparedPdf, ...]) -> None:
-    seen_destinations: set[Path] = set()
-    for pdf in prepared_pdfs:
-        if pdf.destination_path in seen_destinations:
-            raise click.ClickException(
-                f"Duplicate PDF destination: {pdf.destination_path.name}"
-            )
-        seen_destinations.add(pdf.destination_path)
-        if not pdf.destination_path.exists():
-            continue
-        existing_hash = _sha256(pdf.destination_path.read_bytes())
-        if existing_hash != pdf.sha256:
-            raise click.ClickException(
-                f"Refusing to overwrite a different PDF: {pdf.destination_path}"
-            )
-
-
-def _copy_pdf_without_overwrite(pdf: PreparedPdf) -> None:
-    if pdf.destination_path.exists():
-        return
-    pdf.destination_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        dir=pdf.destination_path.parent,
-        prefix=f".{pdf.destination_path.name}.",
-        delete=False,
-    ) as temporary:
-        temporary.write(pdf.content)
-        temporary.flush()
-        os.fsync(temporary.fileno())
-        temporary_path = Path(temporary.name)
-    try:
-        os.link(temporary_path, pdf.destination_path)
-    except FileExistsError:
-        existing_hash = _sha256(pdf.destination_path.read_bytes())
-        if existing_hash != pdf.sha256:
-            raise click.ClickException(
-                f"Refusing to overwrite a different PDF: {pdf.destination_path}"
-            ) from None
-    finally:
-        temporary_path.unlink(missing_ok=True)
 
 
 def _write_run_report(

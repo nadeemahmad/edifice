@@ -28,6 +28,8 @@ Owner-facing commands:
 - `edifice work`
 - `edifice work-context`
 - `edifice context gather`
+- `edifice pdf add`
+- `edifice pdf inventory`
 - `edifice review`
 - `edifice status`
 - `edifice capture`
@@ -42,6 +44,10 @@ Owner-facing commands:
   owner-editable.
 - Authoritative links and PDF links are preferred. A local PDF copy requires an
   explicit command, source URL, classification, and matching SHA-256.
+- Personal and work PDF bytes remain in separate local directories and
+  catalogs.
+- PDF filenames use lowercase kebab-case derived from content metadata with
+  explicit owner overrides for uncertain names.
 - Secrets, credentials, restricted personal data, and uncontrolled bulk
   exports are prohibited.
 - No synchronization.

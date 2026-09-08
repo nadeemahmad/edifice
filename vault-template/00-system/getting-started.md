@@ -65,10 +65,49 @@ Optional inputs:
 --link https://authoritative.example/object
 --pdf https://authoritative.example/document.pdf
 --copy-pdf /absolute/path/document.pdf https://authoritative.example/document.pdf
+--accept-pdf-name
 ```
 
 `--copy-pdf` copies only the file you name. Edifice does not download PDFs and
 will not overwrite different existing bytes.
+Use `--accept-pdf-name` only after reviewing a medium- or low-confidence
+content-derived name.
+
+## Add a PDF
+
+Personal PDF:
+
+```text
+edifice pdf add /absolute/path/document.pdf \
+  --scope personal \
+  --classification personal
+```
+
+Work PDF:
+
+```text
+edifice pdf add /absolute/path/document.pdf \
+  --scope work \
+  --classification netflix-internal \
+  --source https://authoritative-work-source/document.pdf
+```
+
+Edifice reads metadata and bounded first-page text locally through macOS
+PDFKit. It proposes a lowercase kebab-case filename, preserves the original
+filename and exact bytes, calculates SHA-256, and updates the scope's catalog.
+
+Use `--title`, `--creator`, `--year`, `--version`, or `--kind` to correct
+metadata. Use `--accept-name` only after reviewing a medium- or low-confidence
+proposal.
+
+Verify all adopted local PDFs:
+
+```text
+edifice pdf inventory
+```
+
+The inventory checks both scopes for verified hashes, missing files, changed
+bytes, and uncataloged PDFs.
 
 ## Review the week
 
@@ -111,8 +150,9 @@ Verifies the minimum vault structure and confirms Obsidian Sync is disabled.
 3. Run `edifice work`.
 4. Use `edifice work-context` when the active task needs work-system context.
 5. Run `edifice context gather` for the selected JIRA issue and repository.
-6. Add or edit manual context directly in Obsidian.
-7. Capture interruptions without changing focus.
-8. Update the project resume point and daily closeout.
-9. Run `edifice status`.
-10. Use `edifice review` during the weekly review.
+6. Use `edifice pdf add` for any PDF that should become a managed local copy.
+7. Add or edit manual context directly in Obsidian.
+8. Capture interruptions without changing focus.
+9. Update the project resume point and daily closeout.
+10. Run `edifice status`.
+11. Use `edifice review` during the weekly review.

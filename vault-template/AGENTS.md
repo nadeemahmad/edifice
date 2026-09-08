@@ -12,12 +12,14 @@ Read these files before substantive work:
 ## Permissions
 
 - Read operational notes needed for the active task.
-- Write only to `10-personal/operations`, `10-personal/ai`, `20-work`, and
-  `01-inbox/inbox.md`, subject to the applicable nested rules.
+- Write only to `10-personal/operations`, `10-personal/ai`,
+  `10-personal/artifacts`, `20-work`, and `01-inbox/inbox.md`, subject to the
+  applicable nested rules.
 - Treat `10-personal/notes` as human-owned and read-only.
 - Treat `90-archive` as read-only.
 - Preserve raw captures and provenance.
 - Use the `edifice` command for captures.
+- Use `edifice pdf add` for exact local PDF copies and catalog updates.
 - Do not enable synchronization while `20-work` contains local work context.
 - Do not store secrets, credentials, restricted personal data, or uncontrolled
   bulk work exports.

@@ -21,6 +21,9 @@ edifice work
 edifice work-context
 edifice context gather --jira KEY --repo /absolute/repository/path \
   --classification netflix-internal --review-on YYYY-MM-DD
+edifice pdf add /absolute/path/document.pdf \
+  --scope personal --classification personal
+edifice pdf inventory
 edifice review
 edifice status
 edifice doctor
@@ -38,11 +41,37 @@ Add references while gathering:
 --link https://authoritative.example/object
 --pdf https://authoritative.example/document.pdf
 --copy-pdf /absolute/path/document.pdf https://authoritative.example/document.pdf
+--accept-pdf-name
 ```
 
 `--copy-pdf` is explicit. Edifice does not download PDFs. It preserves the
 provided bytes without overwriting a different file and records the source,
 classification, SHA-256, byte size, and verification result.
+Use `--accept-pdf-name` when the PDF catalog reports a medium- or
+low-confidence name.
+
+## PDF library
+
+`pdf add` extracts local PDFKit metadata and bounded first-page text, proposes
+a lowercase kebab-case filename, copies exact bytes into the local Edifice
+library, and updates a JSON-backed Markdown catalog.
+
+Personal PDFs use:
+
+```text
+10-personal/artifacts/pdfs/<broad-kind>/<canonical-name>.pdf
+```
+
+Temporary governed work copies use:
+
+```text
+20-work/references/pdfs/<broad-kind>/<canonical-name>.pdf
+```
+
+Work PDFs require an authoritative source URL. Medium- or low-confidence names
+require `--accept-name` or explicit `--title`, `--creator`, `--year`, and
+`--version` overrides. `pdf inventory` verifies catalog entries, hashes,
+missing files, and uncataloged local copies across both scopes.
 
 The launcher resolves:
 

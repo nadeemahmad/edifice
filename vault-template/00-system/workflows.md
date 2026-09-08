@@ -12,6 +12,8 @@ created: 2026-09-07
 - `edifice work` opens the selected active project.
 - `edifice work-context` opens the local work cockpit.
 - `edifice context gather` creates or refreshes bounded work context.
+- `edifice pdf add` copies and catalogs one intentionally selected PDF.
+- `edifice pdf inventory` verifies both local PDF catalogs.
 - `edifice review` opens the current weekly review.
 - `edifice status` reports the current paths, Inbox count, and Git state.
 
@@ -41,6 +43,21 @@ created: 2026-09-07
    bulk exports.
 10. Keep external mutation disabled.
 11. Remove or relocate `20-work` before personal Sync is enabled.
+
+## PDF library
+
+1. Select one PDF intentionally. Do not bulk-import an accessible directory.
+2. Choose `personal` or `work` scope and the correct classification.
+3. Provide the authoritative source URL for every work PDF.
+4. Run `edifice pdf add`.
+5. Review a medium- or low-confidence proposed name before using
+   `--accept-name`, or provide explicit metadata overrides.
+6. Keep the original file unchanged. Edifice copies exact bytes.
+7. Use the generated Markdown catalog for browsing and the JSON index for
+   deterministic reconciliation.
+8. Run `edifice pdf inventory` to detect missing, changed, or uncataloged
+   copies.
+9. Do not delete the source, upload work content, or move an external file.
 
 ## Daily start
 

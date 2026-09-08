@@ -267,6 +267,7 @@ def test_context_gather_copies_explicit_pdf_without_overwriting_existing_bytes(
         invocation_log=invocation_log,
         response=_worker_response(repository),
         extra_arguments=[
+            "--accept-pdf-name",
             "--copy-pdf",
             str(source_pdf),
             "https://example.netflix.net/design-notes-v1.pdf",
@@ -274,12 +275,7 @@ def test_context_gather_copies_explicit_pdf_without_overwriting_existing_bytes(
     )
 
     copied_pdf = (
-        vault_root
-        / "20-work"
-        / "references"
-        / "pdfs"
-        / "abc-123"
-        / "design-notes-v1.pdf"
+        vault_root / "20-work" / "references" / "pdfs" / "inbox" / "design-notes-v1.pdf"
     )
     note_path = (
         vault_root / "20-work" / "operations" / "projects" / "abc-123-context.md"
@@ -287,6 +283,7 @@ def test_context_gather_copies_explicit_pdf_without_overwriting_existing_bytes(
     expected_hash = f"sha256:{hashlib.sha256(source_pdf.read_bytes()).hexdigest()}"
     assert result.exit_code == 0
     assert copied_pdf.read_bytes() == source_pdf.read_bytes()
+    assert (vault_root / "20-work" / "references" / "pdf-catalog.json").is_file()
     note = note_path.read_text(encoding="utf-8")
     assert expected_hash in note
     assert "hash-match" in note
@@ -301,6 +298,7 @@ def test_context_gather_copies_explicit_pdf_without_overwriting_existing_bytes(
         invocation_log=invocation_log,
         response=_worker_response(repository),
         extra_arguments=[
+            "--accept-pdf-name",
             "--copy-pdf",
             str(source_pdf),
             "https://example.netflix.net/design-notes-v1.pdf",

@@ -27,6 +27,7 @@ Kernel v0 registers:
 - `review`
 - `work-context`
 - `work-context-run-report`
+- `pdf-catalog`
 
 Tasks remain Markdown checkboxes in the note that owns their context.
 
@@ -40,6 +41,10 @@ Tasks remain Markdown checkboxes in the note that owns their context.
   systems.
 - `20-work/ai`: enterprise-agent research and synthesis.
 - `20-work/run-reports`: append-only work-session reports.
+- `10-personal/artifacts/pdfs`: exact local personal PDF copies.
+- `10-personal/operations/artifacts`: personal PDF index and Markdown catalog.
+- `20-work/references/pdfs`: temporary governed work PDF copies.
+- `20-work/references/pdf-catalog.*`: work PDF index and Markdown catalog.
 - `01-inbox/inbox.md`: append-only captures and reversible routing.
 - `00-system`: protected governance and configuration.
 - `90-archive`: read-only except for approved restore or retention work.
@@ -59,3 +64,14 @@ Tasks remain Markdown checkboxes in the note that owns their context.
   questions, and next actions.
 - Local PDF copies record their authoritative source, classification, SHA-256,
   size, and verification result.
+
+## PDF naming
+
+- Canonical PDF filenames use lowercase kebab-case.
+- Names derive from confirmed or extracted creator, short title, version, and
+  year in the type-specific order.
+- The original filename remains in the catalog.
+- Topics, projects, workflow status, and reading state stay out of filenames.
+- Medium- and low-confidence names require an explicit owner acceptance or
+  override.
+- A same-name file with different bytes receives a short SHA-256 suffix.

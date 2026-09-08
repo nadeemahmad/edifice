@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 import click
 
 from edifice.identifiers import new_uuid7
+from edifice.pdf_library import DOCUMENT_KINDS, add_pdf, inventory_pdfs
 from edifice.work_context import gather_work_context
 
 
@@ -35,6 +36,7 @@ REQUIRED_VAULT_FILES = (
     Path("00-system/current.json"),
     Path("00-system/engineering/owner-practices.md"),
     Path("01-inbox/inbox.md"),
+    Path("10-personal/artifacts/AGENTS.md"),
     Path(".obsidian/core-plugins.json"),
 )
 
@@ -200,6 +202,11 @@ def context_command() -> None:
     metavar="FILE SOURCE_URL",
     help="Copy one approved local PDF and record its authoritative source.",
 )
+@click.option(
+    "--accept-pdf-name",
+    is_flag=True,
+    help="Accept medium- or low-confidence names for copied PDFs.",
+)
 @click.pass_obj
 def gather_context(
     paths: RuntimePaths,
@@ -211,6 +218,7 @@ def gather_context(
     links: tuple[str, ...],
     pdf_urls: tuple[str, ...],
     pdf_copies: tuple[tuple[Path, str], ...],
+    accept_pdf_name: bool,
 ) -> None:
     """Create or refresh one governed work-context note."""
     result = gather_work_context(
@@ -224,11 +232,107 @@ def gather_context(
         links=links,
         pdf_urls=pdf_urls,
         pdf_copies=pdf_copies,
+        accept_pdf_name=accept_pdf_name,
         codex_binary=os.environ.get("EDIFICE_CODEX_BIN", "codex"),
     )
     verb = "Created" if result.created else "Refreshed"
     click.echo(f"{verb} {result.note_path}.")
     click.echo(f"Run report: {result.run_report_path}.")
+
+
+@cli.group("pdf")
+def pdf_command() -> None:
+    """Add and verify governed PDF artifacts."""
+
+
+@pdf_command.command("add")
+@click.argument(
+    "source_pdf",
+    type=click.Path(path_type=Path, dir_okay=False),
+)
+@click.option(
+    "--scope",
+    required=True,
+    type=click.Choice(["personal", "work"], case_sensitive=False),
+)
+@click.option(
+    "--classification",
+    required=True,
+    type=click.Choice(
+        ["personal", "public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option("--source", "source_url", help="Authoritative source URL.")
+@click.option(
+    "--kind",
+    "document_kind",
+    type=click.Choice(DOCUMENT_KINDS, case_sensitive=False),
+)
+@click.option("--title", help="Confirmed document title.")
+@click.option("--creator", help="Confirmed author, court, or institution.")
+@click.option("--year", type=click.IntRange(1000, 9999))
+@click.option("--version", help="Confirmed version, edition, citation, or milestone.")
+@click.option(
+    "--accept-name",
+    is_flag=True,
+    help="Accept a medium- or low-confidence proposed filename.",
+)
+@click.pass_obj
+def add_pdf_command(
+    paths: RuntimePaths,
+    source_pdf: Path,
+    scope: str,
+    classification: str,
+    source_url: str | None,
+    document_kind: str | None,
+    title: str | None,
+    creator: str | None,
+    year: int | None,
+    version: str | None,
+    accept_name: bool,
+) -> None:
+    """Copy and catalog one intentionally selected PDF."""
+    result = add_pdf(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        source_pdf=source_pdf,
+        scope=scope,
+        classification=classification,
+        source_url=source_url,
+        document_kind=document_kind,
+        title=title,
+        creator=creator,
+        year=year,
+        version=version,
+        accept_name=accept_name,
+        dry_run=paths.dry_run,
+    )
+    if result.dry_run:
+        click.echo(f"Would add PDF as {result.storage_path}.")
+        return
+    if result.duplicate:
+        click.echo(f"Already cataloged: {result.storage_path}.")
+        return
+    click.echo(f"Added PDF: {result.storage_path}.")
+    click.echo(f"Catalog: {result.catalog_path}.")
+
+
+@pdf_command.command("inventory")
+@click.pass_obj
+def inventory_pdf_command(paths: RuntimePaths) -> None:
+    """Verify cataloged PDFs and identify uncataloged local copies."""
+    inventory = inventory_pdfs(paths.vault_root)
+    for issue in inventory.issues:
+        click.echo(issue)
+    click.echo(
+        f"{inventory.verified} verified, "
+        f"{inventory.unavailable} unavailable, "
+        f"{inventory.mismatched} mismatched, "
+        f"{inventory.uncataloged} uncataloged"
+    )
+    if inventory.unavailable or inventory.mismatched or inventory.uncataloged:
+        raise click.ClickException("PDF inventory has unresolved items.")
 
 
 @cli.command()

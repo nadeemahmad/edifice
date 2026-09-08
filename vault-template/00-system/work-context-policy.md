@@ -71,6 +71,10 @@ Every durable work-context note identifies:
 - `--pdf` records a link and does not download content.
 - `--copy-pdf FILE SOURCE_URL` copies only the exact local PDF named by the
   owner.
+- Context PDF copies pass through the shared work PDF catalog and canonical
+  naming path.
+- Medium- and low-confidence context PDF names require
+  `--accept-pdf-name`.
 - A copied PDF records its source, classification, SHA-256, byte size, and
   hash verification.
 - Edifice never overwrites a different PDF at the managed destination.
