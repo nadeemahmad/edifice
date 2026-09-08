@@ -102,6 +102,9 @@ created: 2026-09-07
 11. Use TextBundle or Markdown exports for Craft.
 12. Use the personal Coda account export, keeping text and table files
     together in one source package.
+13. Route legacy work-source candidates only to reviewed local `20-work`
+    destinations while Sync remains disabled.
+14. Keep personal-cloud eligibility separate from local migration eligibility.
 
 ## Daily start
 

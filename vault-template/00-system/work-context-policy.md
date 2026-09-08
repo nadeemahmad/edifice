@@ -64,6 +64,12 @@ Every durable work-context note identifies:
   outside the generated block.
 - Every run writes a bounded append-only report and a redacted audit event.
 - Gathering never mutates an external system.
+- Reviewed legacy work notes may migrate into local `20-work` paths while Sync
+  remains disabled.
+- Storage on a Netflix-managed device does not itself classify content, and a
+  Netflix-labeled source folder does not itself prohibit local migration.
+- Work-source material remains ineligible for personal Google Drive unless a
+  separate policy review establishes otherwise.
 
 ## PDFs
 

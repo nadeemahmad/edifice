@@ -380,9 +380,13 @@ def test_obsidian_plan_separates_work_sources_imports_and_configuration(
     by_source = {item["source_path"]: item for item in mapping["items"]}
     assert planned.exit_code == 0
     assert by_source["Netflix/Work project.md"]["candidate_type"] == "work-source"
-    assert by_source["Netflix/Work project.md"]["proposed_target"] is None
+    assert by_source["Netflix/Work project.md"]["proposed_target"] == (
+        "20-work/references/imported/work-project.md"
+    )
     assert by_source["Netflix/work-diagram.png"]["candidate_type"] == "work-source"
-    assert by_source["Netflix/work-diagram.png"]["proposed_target"] is None
+    assert by_source["Netflix/work-diagram.png"]["proposed_target"] == (
+        "20-work/references/imported/work-diagram.png"
+    )
     assert by_source["Readwise/Imported article.md"]["candidate_type"] == "source-note"
     assert (
         by_source["Readwise/article-image.png"]["candidate_type"] == "source-artifact"
@@ -390,4 +394,5 @@ def test_obsidian_plan_separates_work_sources_imports_and_configuration(
     assert by_source[".obsidian/app.json"]["candidate_type"] == "configuration"
     assert by_source[".obsidian/app.json"]["proposed_target"] is None
     assert manifest["contains_work_content_candidates"] is True
+    assert manifest["local_migration_status"] == "review-allowed"
     assert manifest["cloud_storage_status"] == "policy-blocked"

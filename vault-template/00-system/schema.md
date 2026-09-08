@@ -121,6 +121,10 @@ proposed/
   artifact candidates.
 - Coda text becomes note candidates; CSV and TSV become table-artifact
   candidates.
+- Legacy Netflix-area files may receive reviewed local-only targets under
+  `20-work/references/imported` while Sync remains disabled.
+- A work-source candidate is excluded from personal-cloud routing, not from
+  local Edifice migration.
 - Packages remain outside the live vault and normal Git history.
 - Encryption remains unavailable until the personal archive key path is
   qualified.

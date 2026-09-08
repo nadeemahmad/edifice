@@ -208,6 +208,7 @@ def plan_migration(
     manifest["status"] = "planned"
     manifest["mapping_sha256"] = _json_hash(mapping)
     manifest["contains_work_content_candidates"] = work_source_count > 0
+    manifest["local_migration_status"] = "review-allowed"
     manifest["cloud_storage_status"] = (
         "policy-blocked" if work_source_count else "unavailable"
     )
@@ -500,12 +501,18 @@ def _plan_attachment_item(
             "source_sha256": file_entry["sha256"],
             "title": relative_path.name,
             "candidate_type": "work-source",
-            "proposed_target": None,
+            "proposed_target": (
+                Path("20-work/references/imported")
+                / _kebab_filename(relative_path.name)
+            ).as_posix(),
             "confidence": "high",
             "decision": "review",
             "evidence_status": "verified",
             "reasons": [
-                "Work-scoped material is not eligible for automatic personal migration."
+                (
+                    "Legacy work-scoped material may migrate to governed local "
+                    "work references after owner review."
+                )
             ],
         }
     if top_level in {"readwise", "_sources", "sources"}:
@@ -578,9 +585,14 @@ def _propose_note_route(
     if top_level in {"netflix", "work", "work notes"}:
         return (
             "work-source",
-            None,
+            f"20-work/references/imported/{filename}",
             "high",
-            ["Work-scoped material is not eligible for automatic personal migration."],
+            [
+                (
+                    "Legacy work-scoped material may migrate to governed local "
+                    "work references after owner review."
+                )
+            ],
         )
     if top_level in {"readwise", "_sources", "sources"}:
         return (
@@ -852,6 +864,8 @@ def _plan_report(
 - Markdown notes: `{mapping["markdown_count"]}`
 - Proposed items: `{mapping["item_count"]}`
 - Work-source candidates: `{cast(dict[str, int], mapping["candidate_counts"]).get("work-source", 0)}`
+- Local migration: `review-allowed`
+- Personal cloud: `{manifest["cloud_storage_status"]}`
 - Decisions approved: `0`
 - Source mutation: `not-applicable`
 - Live-vault import: `not-applicable`
