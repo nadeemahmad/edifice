@@ -577,6 +577,12 @@ def test_migration_apply_copies_exact_approved_notes_and_is_idempotent(
     assert applied_again.exit_code == 0
     assert "Imported: 0; already imported: 3" in applied_again.output
     assert {item["apply_status"] for item in essentials} == {"imported"}
+    cockpit = (
+        vault_root / "10-personal" / "operations" / "migrations" / "home.md"
+    ).read_text(encoding="utf-8")
+    assert "Status: `applied-partial`" in cockpit
+    assert "edifice migrate approve" in cockpit
+    assert "Imported notes are protected exact copies." in cockpit
     assert source_before == {
         path.relative_to(source): path.read_bytes()
         for path in source.rglob("*")

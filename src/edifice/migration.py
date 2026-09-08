@@ -1199,11 +1199,42 @@ Then verify:
 ```text
 edifice migrate verify {package_path}
 ```"""
+        state_note = "No source account or live note has been changed."
+    elif status == "approved":
+        next_steps = f"""```text
+edifice migrate apply {package_path}
+edifice migrate verify {package_path}
+```"""
+        state_note = "No source account or live note has been changed."
+    elif status == "applied-partial":
+        next_steps = f"""Review the remaining mappings:
+
+`{package_path / "mapping.json"}`
+
+Then approve the next exact source prefix:
+
+```text
+edifice migrate approve {package_path} \\
+  --source-prefix PATH/ \\
+  --route protected-note
+edifice migrate verify {package_path}
+```"""
+        state_note = (
+            "The source remains unchanged. Imported notes are protected exact copies."
+        )
+    elif status == "applied":
+        next_steps = f"""```text
+edifice migrate verify {package_path}
+```"""
+        state_note = (
+            "The source remains unchanged. Imported notes are protected exact copies."
+        )
     else:
         next_steps = f"""```text
 edifice migrate plan {package_path}
 edifice migrate verify {package_path}
 ```"""
+        state_note = "No source account or live note has been changed."
     content = f"""---
 type: migration-home
 schema_version: 1
@@ -1223,7 +1254,7 @@ created: {datetime.now(UTC).date().isoformat()}
 
 {next_steps}
 
-No source account or live note has been changed.
+{state_note}
 """
     _replace_atomically(
         vault_root / "10-personal" / "operations" / "migrations" / "home.md",
