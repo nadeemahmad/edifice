@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 import click
 
 from edifice.identifiers import new_uuid7
+from edifice.work_context import gather_work_context
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,79 @@ def work(paths: RuntimePaths) -> None:
 def work_context(paths: RuntimePaths) -> None:
     """Open the local work-context cockpit."""
     _open_note(paths, Path("20-work/home.md"))
+
+
+@cli.group("context")
+def context_command() -> None:
+    """Gather and maintain bounded work context."""
+
+
+@context_command.command("gather")
+@click.option("--jira", "jira_key", required=True, help="JIRA issue key.")
+@click.option(
+    "--repo",
+    "repository",
+    required=True,
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Absolute path to the local Git repository.",
+)
+@click.option(
+    "--classification",
+    required=True,
+    type=click.Choice(
+        ["public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "--review-on",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.option(
+    "--persistence-reason",
+    default="Active task context required for the current objective.",
+    show_default=True,
+)
+@click.option("--link", "links", multiple=True, help="Manual authoritative link.")
+@click.option("--pdf", "pdf_urls", multiple=True, help="Manual PDF link.")
+@click.option(
+    "--copy-pdf",
+    "pdf_copies",
+    multiple=True,
+    type=(click.Path(path_type=Path, dir_okay=False), str),
+    metavar="FILE SOURCE_URL",
+    help="Copy one approved local PDF and record its authoritative source.",
+)
+@click.pass_obj
+def gather_context(
+    paths: RuntimePaths,
+    jira_key: str,
+    repository: Path,
+    classification: str,
+    review_on: datetime,
+    persistence_reason: str,
+    links: tuple[str, ...],
+    pdf_urls: tuple[str, ...],
+    pdf_copies: tuple[tuple[Path, str], ...],
+) -> None:
+    """Create or refresh one governed work-context note."""
+    result = gather_work_context(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        jira_key=jira_key,
+        repository=repository,
+        classification=classification,
+        review_on=review_on.date(),
+        persistence_reason=persistence_reason,
+        links=links,
+        pdf_urls=pdf_urls,
+        pdf_copies=pdf_copies,
+        codex_binary=os.environ.get("EDIFICE_CODEX_BIN", "codex"),
+    )
+    verb = "Created" if result.created else "Refreshed"
+    click.echo(f"{verb} {result.note_path}.")
+    click.echo(f"Run report: {result.run_report_path}.")
 
 
 @cli.command()

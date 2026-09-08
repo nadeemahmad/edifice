@@ -23,6 +23,9 @@ personal cloud storage.
   Calendar when required for the task.
 - Owner notes, decisions, blockers, next actions, and verified summaries.
 - Read-only worker reports with source and verification metadata.
+- Authoritative links and PDF links needed for the active task.
+- Exact local PDF copies explicitly selected by the owner when a link is not
+  sufficient.
 
 ## Prohibited
 
@@ -46,6 +49,33 @@ Every durable work-context note identifies:
 - verification date;
 - owner next action;
 - expiry or review condition when the context is temporary.
+
+## Automatic gathering
+
+- `edifice context gather` may inspect one selected JIRA issue and one local
+  Git repository.
+- The Codex worker uses a read-only filesystem sandbox, no approval requests,
+  and only the allowlisted Netflix knowledge-search tool.
+- All other configured MCP servers are disabled for the run.
+- Generated output must match the strict context schema and the requested JIRA
+  key and repository path before Edifice writes it.
+- Refresh replaces only the explicit generated block.
+- Manual notes, links, PDFs, decisions, questions, and next actions remain
+  outside the generated block.
+- Every run writes a bounded append-only report and a redacted audit event.
+- Gathering never mutates an external system.
+
+## PDFs
+
+- Prefer an authoritative PDF link.
+- `--pdf` records a link and does not download content.
+- `--copy-pdf FILE SOURCE_URL` copies only the exact local PDF named by the
+  owner.
+- A copied PDF records its source, classification, SHA-256, byte size, and
+  hash verification.
+- Edifice never overwrites a different PDF at the managed destination.
+- PDF copying does not grant permission to persist prohibited or
+  over-classified material.
 
 ## Sync gate
 

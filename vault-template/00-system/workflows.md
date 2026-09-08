@@ -11,6 +11,7 @@ created: 2026-09-07
 - `edifice today` opens the current daily review.
 - `edifice work` opens the selected active project.
 - `edifice work-context` opens the local work cockpit.
+- `edifice context gather` creates or refreshes bounded work context.
 - `edifice review` opens the current weekly review.
 - `edifice status` reports the current paths, Inbox count, and Git state.
 
@@ -26,15 +27,20 @@ created: 2026-09-07
 ## Work context
 
 1. Start from one active work task, JIRA issue, repository, or document.
-2. Record its authoritative link and source identity.
-3. Gather only the context required for the current objective.
-4. Record source, classification, verification time, and persistence decision.
-5. Keep raw authoritative content in its work system when a link or summary is
+2. Run `edifice context gather --jira KEY --repo /absolute/path
+   --classification CLASSIFICATION --review-on YYYY-MM-DD`.
+3. Record additional links with `--link` and PDF links with `--pdf`, or add
+   them manually in Obsidian.
+4. Use `--copy-pdf FILE SOURCE_URL` only for an explicitly approved local copy.
+5. Edit notes, decisions, questions, and next actions under `Manual context`.
+6. Refresh with the same gather command. Only the generated block changes.
+7. Record source, classification, verification time, and persistence decision.
+8. Keep raw authoritative content in its work system when a link or summary is
    sufficient.
-6. Store no secrets, credentials, restricted personal data, or uncontrolled
+9. Store no secrets, credentials, restricted personal data, or uncontrolled
    bulk exports.
-7. Keep external mutation disabled.
-8. Remove or relocate `20-work` before personal Sync is enabled.
+10. Keep external mutation disabled.
+11. Remove or relocate `20-work` before personal Sync is enabled.
 
 ## Daily start
 

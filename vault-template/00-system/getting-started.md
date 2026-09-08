@@ -38,6 +38,38 @@ edifice work-context
 Opens the local-only `20-work` cockpit. Work context may remain there only
 while Sync is disabled.
 
+## Gather work context
+
+```text
+edifice context gather \
+  --jira KEY \
+  --repo /absolute/repository/path \
+  --classification netflix-internal \
+  --review-on YYYY-MM-DD
+```
+
+The command reads one JIRA issue and one local Git repository through a
+read-only Codex worker. It creates or refreshes a note under
+`20-work/operations/projects`.
+
+Write directly under `Manual context` whenever you need to add your own notes,
+links, PDF references, decisions, questions, or next action. Refresh replaces
+only the marked generated block.
+
+To change classification, review date, repository, or persistence reason, edit
+the note's frontmatter first and rerun the command with matching values.
+
+Optional inputs:
+
+```text
+--link https://authoritative.example/object
+--pdf https://authoritative.example/document.pdf
+--copy-pdf /absolute/path/document.pdf https://authoritative.example/document.pdf
+```
+
+`--copy-pdf` copies only the file you name. Edifice does not download PDFs and
+will not overwrite different existing bytes.
+
 ## Review the week
 
 ```text
@@ -78,7 +110,9 @@ Verifies the minimum vault structure and confirms Obsidian Sync is disabled.
 2. Choose one intended result.
 3. Run `edifice work`.
 4. Use `edifice work-context` when the active task needs work-system context.
-5. Capture interruptions without changing focus.
-6. Update the project resume point and daily closeout.
-7. Run `edifice status`.
-8. Use `edifice review` during the weekly review.
+5. Run `edifice context gather` for the selected JIRA issue and repository.
+6. Add or edit manual context directly in Obsidian.
+7. Capture interruptions without changing focus.
+8. Update the project resume point and daily closeout.
+9. Run `edifice status`.
+10. Use `edifice review` during the weekly review.

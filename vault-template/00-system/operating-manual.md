@@ -27,6 +27,7 @@ Owner-facing commands:
 - `edifice today`
 - `edifice work`
 - `edifice work-context`
+- `edifice context gather`
 - `edifice review`
 - `edifice status`
 - `edifice capture`
@@ -37,6 +38,10 @@ Owner-facing commands:
 - Personal content and governed local work context use separate directories.
 - Work context remains under `20-work` and keeps source, classification, and
   verification metadata.
+- Context refresh replaces only marked generated blocks. Manual context remains
+  owner-editable.
+- Authoritative links and PDF links are preferred. A local PDF copy requires an
+  explicit command, source URL, classification, and matching SHA-256.
 - Secrets, credentials, restricted personal data, and uncontrolled bulk
   exports are prohibited.
 - No synchronization.

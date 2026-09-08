@@ -12,8 +12,18 @@ No work task has been selected.
 ## Start
 
 Choose one JIRA issue, repository, document, or other authoritative work object.
-Create its context note under `20-work/operations/projects` from
-`00-system/templates/work-context.md`.
+Gather its first context note:
+
+```text
+edifice context gather \
+  --jira KEY \
+  --repo /absolute/repository/path \
+  --classification netflix-internal \
+  --review-on YYYY-MM-DD
+```
+
+Edit the note's `Manual context` sections directly. Later gathers replace only
+the marked generated block.
 
 ## References
 

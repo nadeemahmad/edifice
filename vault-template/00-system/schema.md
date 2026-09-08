@@ -25,6 +25,8 @@ Kernel v0 registers:
 - `project`
 - `question`
 - `review`
+- `work-context`
+- `work-context-run-report`
 
 Tasks remain Markdown checkboxes in the note that owns their context.
 
@@ -48,3 +50,12 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - Python uses snake_case.
 - Human-facing headings use normal title text.
 - Conventional tool files such as `AGENTS.md` retain their required names.
+
+## Work context ownership
+
+- Content between `edifice:generated-context` markers is refreshable.
+- Content outside those markers is never replaced by context gathering.
+- The `Manual context` sections hold owner notes, links, PDFs, decisions,
+  questions, and next actions.
+- Local PDF copies record their authoritative source, classification, SHA-256,
+  size, and verification result.

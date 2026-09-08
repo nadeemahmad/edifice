@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Edifice work context gather result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "title",
+    "jira",
+    "repository",
+    "facts",
+    "sources",
+    "relevant_files",
+    "blockers",
+    "questions",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "jira": {
+      "$ref": "#/$defs/jira"
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "facts": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "$ref": "#/$defs/fact"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "relevant_files": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "$ref": "#/$defs/relevant_file"
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/fact"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/short_text"
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/short_text"
+      }
+    }
+  },
+  "$defs": {
+    "evidence_status": {
+      "type": "string",
+      "enum": [
+        "verified",
+        "owner-attested",
+        "policy-verified",
+        "unavailable",
+        "policy-blocked",
+        "trial-required",
+        "not-applicable"
+      ]
+    },
+    "short_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "jira": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "title",
+        "status",
+        "url",
+        "summary",
+        "evidence_status"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 40
+        },
+        "title": {
+          "$ref": "#/$defs/short_text"
+        },
+        "status": {
+          "$ref": "#/$defs/short_text"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2000
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "evidence_status": {
+          "$ref": "#/$defs/evidence_status"
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "revision",
+        "branch",
+        "working_tree",
+        "summary",
+        "evidence_status"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "revision": {
+          "$ref": "#/$defs/short_text"
+        },
+        "branch": {
+          "$ref": "#/$defs/short_text"
+        },
+        "working_tree": {
+          "$ref": "#/$defs/short_text"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "evidence_status": {
+          "$ref": "#/$defs/evidence_status"
+        }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "source",
+        "evidence_status"
+      ],
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/short_text"
+        },
+        "source": {
+          "$ref": "#/$defs/short_text"
+        },
+        "evidence_status": {
+          "$ref": "#/$defs/evidence_status"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "url",
+        "kind",
+        "evidence_status"
+      ],
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/short_text"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2000
+        },
+        "kind": {
+          "$ref": "#/$defs/short_text"
+        },
+        "evidence_status": {
+          "$ref": "#/$defs/evidence_status"
+        }
+      }
+    },
+    "relevant_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "reason",
+        "evidence_status"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "reason": {
+          "$ref": "#/$defs/short_text"
+        },
+        "evidence_status": {
+          "$ref": "#/$defs/evidence_status"
+        }
+      }
+    }
+  }
+}

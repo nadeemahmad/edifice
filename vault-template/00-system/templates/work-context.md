@@ -1,32 +1,37 @@
 ---
 id:
 type: work-context
-schema_version: 1
+schema_version: 2
 created:
 status: active
+title:
 classification:
 authoritative_source:
 external_url:
 jira:
 repository:
-last_verified:
 review_on:
+persistence_reason:
 ---
 
 # Work Context
 
-## Objective
+<!-- edifice:generated-context:start -->
+## Generated context
 
-## Current state
+Run `edifice context gather` to populate this block.
+<!-- edifice:generated-context:end -->
 
-## Verified context
+## Manual context
 
-## Relevant code and documents
+### Notes
 
-## Decisions
+### Links
 
-## Blockers and questions
+### PDFs
 
-## Next action
+### Decisions
 
-## Persistence and cleanup
+### Questions
+
+### Next action
