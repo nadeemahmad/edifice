@@ -150,6 +150,14 @@ class PdfInventory:
     issues: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class _TitleCandidate:
+    title: str
+    start: int
+    end: int
+    score: int
+
+
 def extract_pdf_metadata(pdf_path: Path) -> PdfMetadata:
     """Extract bounded metadata and first-page text with macOS PDFKit."""
     try:
@@ -214,6 +222,8 @@ def add_pdf(
     version: str | None,
     accept_name: bool,
     dry_run: bool,
+    source_system: str = "local",
+    original_filename: str | None = None,
 ) -> PdfAddResult:
     """Copy one selected PDF into the governed local library."""
     normalized_source = _validate_pdf_path(source_pdf)
@@ -226,21 +236,16 @@ def add_pdf(
     normalized_kind = _validate_document_kind(document_kind)
 
     content = normalized_source.read_bytes()
-    content_hash = _sha256(content)
-    with tempfile.TemporaryDirectory(prefix="edifice-pdf-") as temporary_root:
-        snapshot_path = Path(temporary_root) / "snapshot.pdf"
-        snapshot_path.write_bytes(content)
-        metadata = extract_pdf_metadata(snapshot_path)
-
-    naming = _derive_naming(
-        source_pdf=normalized_source,
-        metadata=metadata,
+    metadata, naming = propose_pdf_naming(
+        content=content,
+        original_filename=original_filename or normalized_source.name,
         document_kind=normalized_kind,
         title_override=title,
         creator_override=creator,
         year_override=year,
         version_override=version,
     )
+    content_hash = _sha256(content)
     if naming.confidence != "high" and not accept_name and not dry_run:
         raise click.ClickException(
             f"Proposed PDF name has {naming.confidence} confidence: "
@@ -301,7 +306,10 @@ def add_pdf(
             "document_kind": naming.document_kind,
             "classification": normalized_classification,
             "source_url": normalized_source_url,
-            "original_filename": normalized_source.name,
+            "source_system": _clean_display_value(source_system) or "local",
+            "original_filename": _validate_original_filename(
+                original_filename or normalized_source.name
+            ),
             "canonical_filename": storage_path.name,
             "storage_path": relative_storage_path.as_posix(),
             "sha256": content_hash,
@@ -365,6 +373,36 @@ def add_pdf(
         duplicate=False,
         dry_run=False,
     )
+
+
+def propose_pdf_naming(
+    *,
+    content: bytes,
+    original_filename: str,
+    document_kind: str | None,
+    title_override: str | None,
+    creator_override: str | None,
+    year_override: int | None,
+    version_override: str | None,
+) -> tuple[PdfMetadata, PdfNaming]:
+    """Extract metadata and derive a canonical name from one byte snapshot."""
+    if not content.startswith(b"%PDF-"):
+        raise click.ClickException("Content does not have a PDF header.")
+    validated_filename = _validate_original_filename(original_filename)
+    with tempfile.TemporaryDirectory(prefix="edifice-pdf-") as temporary_root:
+        snapshot_path = Path(temporary_root) / "snapshot.pdf"
+        snapshot_path.write_bytes(content)
+        metadata = extract_pdf_metadata(snapshot_path)
+    naming = _derive_naming(
+        source_pdf=Path(validated_filename),
+        metadata=metadata,
+        document_kind=document_kind,
+        title_override=title_override,
+        creator_override=creator_override,
+        year_override=year_override,
+        version_override=version_override,
+    )
+    return metadata, naming
 
 
 def inventory_pdfs(vault_root: Path) -> PdfInventory:
@@ -487,6 +525,13 @@ def _validate_document_kind(document_kind: str | None) -> str | None:
     return normalized
 
 
+def _validate_original_filename(value: str) -> str:
+    filename = Path(value).name.strip()
+    if not filename or filename in {".", ".."}:
+        raise click.ClickException("Original PDF filename must not be empty.")
+    return filename
+
+
 def _validate_pdf_path(source_pdf: Path) -> Path:
     if not source_pdf.is_absolute():
         raise click.ClickException("PDF path must be absolute.")
@@ -509,14 +554,27 @@ def _derive_naming(
     year_override: int | None,
     version_override: str | None,
 ) -> PdfNaming:
+    title_candidate = _first_page_title_candidate(metadata.first_page_text)
     title, confidence, naming_evidence = _select_title(
         source_pdf,
         metadata,
         title_override,
+        title_candidate,
     )
-    creator = _clean_display_value(creator_override or metadata.author)
-    year = year_override or _extract_year(metadata.creation_date)
-    version = _clean_display_value(version_override or "")
+    metadata_creator = _clean_display_value(metadata.author)
+    if _is_generic_metadata(metadata_creator):
+        metadata_creator = ""
+    creator = _clean_display_value(creator_override or metadata_creator)
+    if not creator and title_candidate is not None:
+        creator = _infer_creator(metadata.first_page_text, title_candidate)
+    year = (
+        year_override
+        or _extract_printed_year(metadata.first_page_text)
+        or _extract_year(metadata.creation_date)
+    )
+    version = _clean_display_value(
+        version_override or _extract_version(metadata.first_page_text)
+    )
     kind = document_kind or _infer_document_kind(metadata.first_page_text)
     folder = FOLDER_BY_KIND[kind]
     components = _filename_components(
@@ -544,38 +602,228 @@ def _select_title(
     source_pdf: Path,
     metadata: PdfMetadata,
     title_override: str | None,
+    title_candidate: _TitleCandidate | None,
 ) -> tuple[str, str, str]:
     if title_override and title_override.strip():
         return _clean_display_value(title_override), "high", "owner-attested"
     metadata_title = _clean_display_value(metadata.title)
-    if metadata_title:
+    if metadata_title and not _is_generic_metadata(metadata_title):
         return metadata_title, "high", metadata.evidence_status
-    first_page_title = _first_page_title(metadata.first_page_text)
-    if first_page_title:
-        return first_page_title, "medium", metadata.evidence_status
-    return _clean_display_value(source_pdf.stem), "low", "unavailable"
+    if title_candidate is not None:
+        return title_candidate.title, "medium", metadata.evidence_status
+    fallback_title = _clean_display_value(source_pdf.stem)
+    metadata_author = _clean_display_value(metadata.author)
+    if not _is_generic_metadata(metadata_author) and _looks_human_filename(
+        fallback_title
+    ):
+        return fallback_title, "medium", metadata.evidence_status
+    return fallback_title, "low", "unavailable"
 
 
-def _first_page_title(first_page_text: str) -> str:
-    for raw_line in first_page_text.splitlines()[:20]:
-        line = _clean_display_value(raw_line)
-        words = line.split()
-        letters = sum(character.isalpha() for character in line)
-        if (
-            2 <= len(words) <= 20
-            and len(line) <= 180
-            and letters >= max(4, len(line) // 2)
-            and not line.lower().startswith(("http://", "https://"))
-        ):
-            return line
-    return ""
+def _first_page_title_candidate(first_page_text: str) -> _TitleCandidate | None:
+    lines = [_clean_display_value(line) for line in first_page_text.splitlines()[:25]]
+    candidates: list[_TitleCandidate] = []
+    for start, line in enumerate(lines):
+        if not line or _is_title_boilerplate(line) or _looks_like_institution(line):
+            continue
+        title = line
+        end = start
+        for next_index in range(start + 1, min(start + 3, len(lines))):
+            next_line = lines[next_index]
+            if not _should_join_title_line(title, next_line):
+                break
+            title = _join_title_lines(title, next_line)
+            end = next_index
+        score = _title_score(title, start)
+        if score > 0:
+            candidates.append(
+                _TitleCandidate(
+                    title=title,
+                    start=start,
+                    end=end,
+                    score=score,
+                )
+            )
+    if not candidates:
+        return None
+    return max(candidates, key=lambda candidate: (candidate.score, -candidate.start))
+
+
+def _is_title_boilerplate(line: str) -> bool:
+    lower = line.casefold()
+    return (
+        lower.startswith(
+            (
+                "http://",
+                "https://",
+                "arxiv:",
+                "doi:",
+                "provided proper attribution",
+                "reproduce the tables",
+                "scholarly works",
+                "this content downloaded",
+                "all use subject",
+                "copyright ",
+                "© ",
+                "bmj ",
+                "research methods & reporting",
+            )
+        )
+        or "@" in line
+        or lower in {"abstract", "contents", "table of contents"}
+        or (
+            "," in line
+            and any(
+                role in lower
+                for role in (" director", " professor", " honorary", " fellow")
+            )
+        )
+        or re.match(r"^\d{1,3}(?:\.\d{1,3}){3}\b", line) is not None
+    )
+
+
+def _should_join_title_line(current: str, next_line: str) -> bool:
+    if (
+        not next_line
+        or _is_title_boilerplate(next_line)
+        or _looks_like_author(next_line)
+        or _looks_like_institution(next_line)
+    ):
+        return False
+    current_words = current.split()
+    next_words = next_line.split()
+    last_word = current_words[-1].casefold().rstrip("-:") if current_words else ""
+    return (
+        current.endswith("-")
+        or last_word in {"a", "an", "and", "for", "in", "of", "the", "to", "with"}
+        or next_line[:1].islower()
+        or (
+            len(current_words) == 1
+            and len(next_words) <= 4
+            and current.isupper()
+            and next_line.isupper()
+        )
+    )
+
+
+def _join_title_lines(current: str, next_line: str) -> str:
+    if current.endswith("-"):
+        return f"{current[:-1]}{next_line}"
+    return f"{current} {next_line}"
+
+
+def _title_score(title: str, start: int) -> int:
+    words = title.split()
+    if not words or len(words) > 20 or len(title) > 200:
+        return -100
+    if _is_generic_metadata(title) or _is_title_boilerplate(title):
+        return -100
+    letters = [character for character in title if character.isalpha()]
+    if len(letters) < 4:
+        return -100
+    score = min(len(words), 12)
+    if 2 <= len(words) <= 15:
+        score += 20
+    elif len(words) == 1:
+        score += 4
+    title_words = [
+        word for word in words if any(character.isalpha() for character in word)
+    ]
+    title_like = sum(word.isupper() or word[:1].isupper() for word in title_words)
+    if title_words and title_like / len(title_words) >= 0.6:
+        score += 8
+    score += max(0, 8 - start)
+    if title.endswith((".", ";")):
+        score -= 8
+    return score
+
+
+def _infer_creator(
+    first_page_text: str,
+    title_candidate: _TitleCandidate,
+) -> str:
+    lines = [_clean_display_value(line) for line in first_page_text.splitlines()[:30]]
+    creators: list[str] = []
+    for line in lines[title_candidate.end + 1 : title_candidate.end + 9]:
+        if _looks_like_author(line):
+            creators.append(_clean_author(line))
+            if len(creators) == 2:
+                break
+        elif creators:
+            break
+    if not creators:
+        return ""
+    return f"{creators[0]} et al" if len(creators) > 1 else creators[0]
+
+
+def _looks_like_author(line: str) -> bool:
+    cleaned = _clean_author(line)
+    words = cleaned.split()
+    if not 2 <= len(words) <= 7 or any(character.isdigit() for character in cleaned):
+        return False
+    if _looks_like_institution(cleaned):
+        return False
+    connectors = {"and", "de", "del", "van", "von"}
+    return all(
+        word.casefold() in connectors or word.isupper() or word[:1].isupper()
+        for word in words
+    )
+
+
+def _looks_like_institution(line: str) -> bool:
+    lower = f" {line.casefold()} "
+    return any(
+        marker in lower
+        for marker in (
+            " university ",
+            " institute ",
+            " department ",
+            " school ",
+            " google ",
+            " research ",
+            " press ",
+            " edition ",
+            " version ",
+            " leadership ",
+            " spring ",
+            " abstract ",
+        )
+    )
+
+
+def _clean_author(line: str) -> str:
+    cleaned = re.sub(r"[^0-9A-Za-zÀ-ÖØ-öø-ÿ.' -]+", "", line)
+    normalized = _clean_display_value(cleaned)
+    return normalized.title() if normalized.isupper() else normalized
+
+
+def _is_generic_metadata(value: str) -> bool:
+    normalized = _clean_display_value(value).casefold()
+    return normalized in {
+        "",
+        "document",
+        "front matter",
+        "scan",
+        "unknown",
+        "untitled",
+    } or normalized.startswith("resource-")
+
+
+def _looks_human_filename(value: str) -> bool:
+    words = re.findall(r"[^\W\d_]+", value, flags=re.UNICODE)
+    return len(words) >= 3 and not re.fullmatch(r"[A-Za-z0-9_-]{32,}", value)
 
 
 def _infer_document_kind(first_page_text: str) -> str:
     text = f" {first_page_text.casefold()} "
     if " isbn " in text:
         return "book"
-    if " abstract " in text or " doi:" in text or " doi.org/" in text:
+    if (
+        " abstract " in text
+        or " arxiv:" in text
+        or " doi:" in text
+        or " doi.org/" in text
+    ):
         return "research-paper"
     if " supreme court " in text or " court of appeals " in text:
         return "judicial-opinion"
@@ -590,6 +838,31 @@ def _infer_document_kind(first_page_text: str) -> str:
     if " annual report " in text or " technical report " in text:
         return "report"
     return "other"
+
+
+def _extract_printed_year(first_page_text: str) -> int | None:
+    for line in first_page_text.splitlines()[:8]:
+        match = re.search(r"(19|20)\d{2}", line)
+        if match:
+            return int(match.group())
+    return None
+
+
+def _extract_version(first_page_text: str) -> str:
+    first_lines = "\n".join(first_page_text.splitlines()[:20])
+    match = re.search(
+        r"\b\d+(?:st|nd|rd|th)\s+edition(?:\s+version\s+[0-9.]+)?\b",
+        first_lines,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return _clean_display_value(match.group())
+    match = re.search(
+        r"\bversion\s+[0-9]+(?:\.[0-9]+)*\b",
+        first_lines,
+        flags=re.IGNORECASE,
+    )
+    return _clean_display_value(match.group()) if match else ""
 
 
 def _filename_components(
@@ -623,7 +896,11 @@ def _kebab(value: str) -> str:
 
 
 def _clean_display_value(value: str) -> str:
-    return " ".join(value.split()).strip()
+    without_controls = "".join(
+        " " if unicodedata.category(character).startswith("C") else character
+        for character in value
+    )
+    return " ".join(without_controls.split()).strip()
 
 
 def _extract_year(value: str) -> int | None:

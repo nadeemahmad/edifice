@@ -7,3 +7,5 @@
   store.
 - Treat cataloged PDFs as immutable local copies until an approved migration
   or replacement workflow exists.
+- Adobe imports must pass through the staged manifest and normal personal PDF
+  catalog.

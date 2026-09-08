@@ -28,6 +28,7 @@ Kernel v0 registers:
 - `work-context`
 - `work-context-run-report`
 - `pdf-catalog`
+- `adobe-pdf-import-review`
 
 Tasks remain Markdown checkboxes in the note that owns their context.
 
@@ -45,6 +46,8 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - `10-personal/operations/artifacts`: personal PDF index and Markdown catalog.
 - `20-work/references/pdfs`: temporary governed work PDF copies.
 - `20-work/references/pdf-catalog.*`: work PDF index and Markdown catalog.
+- `10-personal/operations/artifacts/imports`: staged Adobe import manifests and
+  review notes.
 - `01-inbox/inbox.md`: append-only captures and reversible routing.
 - `00-system`: protected governance and configuration.
 - `90-archive`: read-only except for approved restore or retention work.
@@ -75,3 +78,15 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - Medium- and low-confidence names require an explicit owner acceptance or
   override.
 - A same-name file with different bytes receives a short SHA-256 suffix.
+- PDF byte stores are excluded from the vault's local Git history; catalogs,
+  manifests, and governance remain versioned.
+
+## Adobe import manifest
+
+- `source_completeness` is `trial-required` for local cache discovery and
+  `owner-attested` only for an explicitly complete downloaded export.
+- Every candidate begins with decision `review`.
+- Valid decisions are `review`, `import-personal`, and `skip`.
+- Apply rechecks the planned source path and SHA-256 before copying.
+- Each successful import records its storage path and timestamp immediately so
+  interrupted runs can resume.

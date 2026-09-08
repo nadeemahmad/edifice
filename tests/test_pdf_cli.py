@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from edifice.cli import cli
-from edifice.pdf_library import PdfMetadata
+from edifice.pdf_library import PdfMetadata, propose_pdf_naming
 
 
 def _write_pdf(path: Path, marker: bytes = b"first") -> Path:
@@ -66,6 +66,177 @@ def _use_metadata(
         return metadata
 
     monkeypatch.setattr("edifice.pdf_library.extract_pdf_metadata", extract)
+
+
+def _propose(
+    monkeypatch: pytest.MonkeyPatch,
+    metadata: PdfMetadata,
+    *,
+    original_filename: str = "cached-resource.pdf",
+):
+    _use_metadata(monkeypatch, metadata)
+    return propose_pdf_naming(
+        content=b"%PDF-1.7\ncontent\n%%EOF\n",
+        original_filename=original_filename,
+        document_kind=None,
+        title_override=None,
+        creator_override=None,
+        year_override=None,
+        version_override=None,
+    )
+
+
+def test_pdf_naming_joins_split_book_title_and_extracts_author_and_edition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, naming = _propose(
+        monkeypatch,
+        PdfMetadata(
+            title="",
+            author="",
+            creation_date="Sat Feb 15 2025 13:31:31 GMT-0800",
+            first_page_text=(
+                "DISTRIBUTED\n"
+                "SYSTEMS\n"
+                "MAARTEN VAN STEEN\n"
+                "ANDREW S. TANENBAUM\n"
+                "4TH EDITION VERSION 03"
+            ),
+            page_count=700,
+            evidence_status="verified",
+        ),
+    )
+
+    assert naming.title == "DISTRIBUTED SYSTEMS"
+    assert naming.creator == "Maarten Van Steen et al"
+    assert naming.version == "4TH EDITION VERSION 03"
+    assert naming.canonical_filename == (
+        "maarten-van-steen-et-al-distributed-systems-4th-edition-version-03-2025.pdf"
+    )
+
+
+def test_pdf_naming_skips_license_boilerplate_and_uses_printed_year(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, naming = _propose(
+        monkeypatch,
+        PdfMetadata(
+            title="",
+            author="",
+            creation_date="Wed Apr 10 2024 14:11:43 GMT-0700",
+            first_page_text=(
+                "arXiv:1706.03762v7 [cs.CL] 2 Aug 2023\n"
+                "Provided proper attribution is provided, Google hereby grants "
+                "permission to\n"
+                "reproduce the tables and figures in this paper solely for use in "
+                "journalistic or\n"
+                "scholarly works.\n"
+                "Attention Is All You Need\n"
+                "Ashish Vaswani\n"
+                "Google Brain\n"
+                "avaswani@google.com"
+            ),
+            page_count=15,
+            evidence_status="verified",
+        ),
+    )
+
+    assert naming.title == "Attention Is All You Need"
+    assert naming.creator == "Ashish Vaswani"
+    assert naming.year == 2023
+    assert naming.document_kind == "research-paper"
+    assert naming.canonical_filename == (
+        "ashish-vaswani-attention-is-all-you-need-2023.pdf"
+    )
+
+
+def test_pdf_naming_replaces_generic_metadata_title_with_first_page_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, naming = _propose(
+        monkeypatch,
+        PdfMetadata(
+            title="Front Matter",
+            author="Schwabish, Jonathan",
+            creation_date="Mon Apr 13 2026 21:06:04 GMT-0700",
+            first_page_text=(
+                "BETTER\n"
+                "PRESENTATIONS\n"
+                "This content downloaded from\n"
+                "\x00\x00\x00128.220.51.130 on Tue, 14 Apr 2026"
+            ),
+            page_count=300,
+            evidence_status="verified",
+        ),
+    )
+
+    assert naming.title == "BETTER PRESENTATIONS"
+    assert naming.creator == "Schwabish, Jonathan"
+    assert naming.canonical_filename == (
+        "schwabish-jonathan-better-presentations-2026.pdf"
+    )
+
+
+def test_pdf_naming_ignores_affiliations_after_split_research_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, naming = _propose(
+        monkeypatch,
+        PdfMetadata(
+            title="Untitled",
+            author="Unknown",
+            creation_date="Tue Sep 04 2012 04:37:21 GMT-0700",
+            first_page_text=(
+                "BMJ 2012;345:e5661 doi: 10.1136/bmj.e5661 "
+                "(Published 4 September 2012) Page 1 of 21\n"
+                "Research Methods & Reporting\n"
+                "RESEARCH METHODS & REPORTING\n"
+                "Consort 2010 statement: extension to cluster\n"
+                "randomised trials\n"
+                "The Consolidated Standards of Reporting Trials statement was "
+                "developed to improve reporting.\n"
+                "Marion K Campbell director, Gilda Piaggio honorary professor\n"
+                "Department of Medical Statistics, London School of Hygiene\n"
+                "and Tropical Medicine, London, UK; Centre for Statistics in "
+                "Medicine, University of Oxford, Oxford, UK"
+            ),
+            page_count=21,
+            evidence_status="verified",
+        ),
+    )
+
+    assert naming.title == (
+        "Consort 2010 statement: extension to cluster randomised trials"
+    )
+    assert naming.creator == ""
+    assert naming.year == 2012
+    assert naming.document_kind == "research-paper"
+    assert naming.canonical_filename == (
+        "consort-2010-statement-extension-to-cluster-randomised-trials-2012.pdf"
+    )
+
+
+def test_pdf_naming_uses_human_filename_with_verified_author_as_medium_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, naming = _propose(
+        monkeypatch,
+        PdfMetadata(
+            title="",
+            author="Remzi Arpaci",
+            creation_date="Tue May 24 2016 02:37:51 GMT-0700",
+            first_page_text="",
+            page_count=700,
+            evidence_status="verified",
+        ),
+        original_filename="Operating Systems - Three Easy Pieces.pdf",
+    )
+
+    assert naming.title == "Operating Systems - Three Easy Pieces"
+    assert naming.confidence == "medium"
+    assert naming.canonical_filename == (
+        "remzi-arpaci-operating-systems-three-easy-pieces-2016.pdf"
+    )
 
 
 def test_pdf_add_uses_content_metadata_for_canonical_kebab_name(

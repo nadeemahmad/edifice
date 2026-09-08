@@ -24,6 +24,9 @@ edifice context gather --jira KEY --repo /absolute/repository/path \
 edifice pdf add /absolute/path/document.pdf \
   --scope personal --classification personal
 edifice pdf inventory
+edifice pdf import-adobe plan
+edifice pdf import-adobe apply /absolute/path/manifest.json \
+  --allow-incomplete-source --confirm-all-personal
 edifice review
 edifice status
 edifice doctor
@@ -72,6 +75,35 @@ Work PDFs require an authoritative source URL. Medium- or low-confidence names
 require `--accept-name` or explicit `--title`, `--creator`, `--year`, and
 `--version` overrides. `pdf inventory` verifies catalog entries, hashes,
 missing files, and uncataloged local copies across both scopes.
+
+### Adobe Cloud import
+
+Create a review manifest from PDFs already materialized in Acrobat's local
+cloud cache:
+
+```text
+edifice pdf import-adobe plan
+```
+
+The cache is not proof of complete Adobe Cloud coverage. For a complete
+owner-downloaded Adobe export:
+
+```text
+edifice pdf import-adobe plan \
+  --export-dir /absolute/path/adobe-export \
+  --export-complete
+```
+
+Apply only after reviewing the generated manifest:
+
+```text
+edifice pdf import-adobe apply /absolute/path/manifest.json \
+  --confirm-all-personal
+```
+
+Cache-only plans additionally require `--allow-incomplete-source`. Apply
+rechecks every SHA-256, imports exact bytes through the personal PDF catalog,
+updates progress after each file, and never changes the Adobe source.
 
 The launcher resolves:
 

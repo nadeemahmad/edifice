@@ -109,6 +109,38 @@ edifice pdf inventory
 The inventory checks both scopes for verified hashes, missing files, changed
 bytes, and uncataloged PDFs.
 
+## Import from Adobe Cloud
+
+Plan from Acrobat's locally materialized cloud cache:
+
+```text
+edifice pdf import-adobe plan
+```
+
+This creates JSON and Markdown review files under
+`10-personal/operations/artifacts/imports`. It does not copy PDFs.
+
+The local cache is incomplete by definition. To represent all Adobe Cloud PDFs,
+first download a complete export through Acrobat, then run:
+
+```text
+edifice pdf import-adobe plan \
+  --export-dir /absolute/path/adobe-export \
+  --export-complete
+```
+
+After reviewing the proposed names and confirming the entries belong in the
+personal library:
+
+```text
+edifice pdf import-adobe apply /absolute/path/manifest.json \
+  --confirm-all-personal
+```
+
+For a cache-only partial import, also pass `--allow-incomplete-source`.
+Edifice verifies every source hash again, imports through the normal PDF
+catalog, records progress after each file, and leaves Adobe unchanged.
+
 ## Review the week
 
 ```text
@@ -151,8 +183,9 @@ Verifies the minimum vault structure and confirms Obsidian Sync is disabled.
 4. Use `edifice work-context` when the active task needs work-system context.
 5. Run `edifice context gather` for the selected JIRA issue and repository.
 6. Use `edifice pdf add` for any PDF that should become a managed local copy.
-7. Add or edit manual context directly in Obsidian.
-8. Capture interruptions without changing focus.
-9. Update the project resume point and daily closeout.
-10. Run `edifice status`.
-11. Use `edifice review` during the weekly review.
+7. Use `edifice pdf import-adobe plan` for staged Adobe consolidation.
+8. Add or edit manual context directly in Obsidian.
+9. Capture interruptions without changing focus.
+10. Update the project resume point and daily closeout.
+11. Run `edifice status`.
+12. Use `edifice review` during the weekly review.

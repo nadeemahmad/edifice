@@ -30,6 +30,8 @@ Owner-facing commands:
 - `edifice context gather`
 - `edifice pdf add`
 - `edifice pdf inventory`
+- `edifice pdf import-adobe plan`
+- `edifice pdf import-adobe apply`
 - `edifice review`
 - `edifice status`
 - `edifice capture`
@@ -48,6 +50,8 @@ Owner-facing commands:
   catalogs.
 - PDF filenames use lowercase kebab-case derived from content metadata with
   explicit owner overrides for uncertain names.
+- Adobe imports use a review manifest, source hashes, explicit personal-scope
+  confirmation, resumable apply, and no Adobe mutation.
 - Secrets, credentials, restricted personal data, and uncontrolled bulk
   exports are prohibited.
 - No synchronization.

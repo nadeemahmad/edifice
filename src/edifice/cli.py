@@ -14,6 +14,11 @@ from urllib.parse import urlencode
 
 import click
 
+from edifice.adobe_import import (
+    apply_adobe_import,
+    default_adobe_cache_roots,
+    plan_adobe_import,
+)
 from edifice.identifiers import new_uuid7
 from edifice.pdf_library import DOCUMENT_KINDS, add_pdf, inventory_pdfs
 from edifice.work_context import gather_work_context
@@ -37,6 +42,7 @@ REQUIRED_VAULT_FILES = (
     Path("00-system/engineering/owner-practices.md"),
     Path("01-inbox/inbox.md"),
     Path("10-personal/artifacts/AGENTS.md"),
+    Path("10-personal/operations/artifacts/imports/AGENTS.md"),
     Path(".obsidian/core-plugins.json"),
 )
 
@@ -333,6 +339,82 @@ def inventory_pdf_command(paths: RuntimePaths) -> None:
     )
     if inventory.unavailable or inventory.mismatched or inventory.uncataloged:
         raise click.ClickException("PDF inventory has unresolved items.")
+
+
+@pdf_command.group("import-adobe")
+def import_adobe_command() -> None:
+    """Plan and apply a read-only Adobe PDF migration."""
+
+
+@import_adobe_command.command("plan")
+@click.option(
+    "--export-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Adobe-downloaded export directory to scan in addition to local cache.",
+)
+@click.option(
+    "--export-complete",
+    is_flag=True,
+    help="Attest that the export directory contains every Adobe Cloud PDF.",
+)
+@click.pass_obj
+def plan_adobe_command(
+    paths: RuntimePaths,
+    export_dir: Path | None,
+    export_complete: bool,
+) -> None:
+    """Create a review manifest without importing PDF files."""
+    result = plan_adobe_import(
+        vault_root=paths.vault_root,
+        cache_roots=default_adobe_cache_roots(),
+        export_dir=export_dir,
+        export_complete=export_complete,
+    )
+    click.echo(f"Manifest: {result.manifest_path}.")
+    click.echo(f"Review: {result.review_path}.")
+    click.echo(
+        f"Candidates: {result.candidate_count}; "
+        f"duplicate source files: {result.duplicate_source_files}."
+    )
+    click.echo(f"Source completeness: {result.source_completeness}.")
+
+
+@import_adobe_command.command("apply")
+@click.argument(
+    "manifest_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+)
+@click.option(
+    "--allow-incomplete-source",
+    is_flag=True,
+    help="Import only PDFs materialized in the local Acrobat cache.",
+)
+@click.option(
+    "--confirm-all-personal",
+    is_flag=True,
+    help="Confirm every pending candidate belongs in the personal library.",
+)
+@click.pass_obj
+def apply_adobe_command(
+    paths: RuntimePaths,
+    manifest_path: Path,
+    allow_incomplete_source: bool,
+    confirm_all_personal: bool,
+) -> None:
+    """Import approved manifest entries into the personal PDF library."""
+    result = apply_adobe_import(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        manifest_path=manifest_path,
+        allow_incomplete_source=allow_incomplete_source,
+        confirm_all_personal=confirm_all_personal,
+    )
+    click.echo(
+        f"Imported: {result.imported}; "
+        f"already imported: {result.already_imported}; "
+        f"skipped: {result.skipped}."
+    )
+    click.echo(f"Manifest: {result.manifest_path}.")
 
 
 @cli.command()

@@ -14,6 +14,9 @@ created: 2026-09-07
 - `edifice context gather` creates or refreshes bounded work context.
 - `edifice pdf add` copies and catalogs one intentionally selected PDF.
 - `edifice pdf inventory` verifies both local PDF catalogs.
+- `edifice pdf import-adobe plan` creates a non-importing Adobe review
+  manifest.
+- `edifice pdf import-adobe apply` imports approved personal entries.
 - `edifice review` opens the current weekly review.
 - `edifice status` reports the current paths, Inbox count, and Git state.
 
@@ -58,6 +61,21 @@ created: 2026-09-07
 8. Run `edifice pdf inventory` to detect missing, changed, or uncataloged
    copies.
 9. Do not delete the source, upload work content, or move an external file.
+
+## Adobe PDF import
+
+1. Run `edifice pdf import-adobe plan`.
+2. Treat cache-only discovery as incomplete.
+3. For complete consolidation, download an owner-verified Adobe export and plan
+   it with `--export-dir` and `--export-complete`.
+4. Review every candidate's proposed name, confidence, source hash, and
+   personal-scope decision.
+5. Keep ambiguous or non-personal entries as `review` or `skip`.
+6. Apply only approved entries.
+7. Recheck source hashes immediately before each copy.
+8. Record progress after each successful import so a stopped run can resume.
+9. Run `edifice pdf inventory`.
+10. Keep Adobe files unchanged until a separate retention decision.
 
 ## Daily start
 
