@@ -10,6 +10,7 @@ created: 2026-09-07
 - `edifice start` opens the home cockpit.
 - `edifice today` opens the current daily review.
 - `edifice work` opens the selected active project.
+- `edifice work-context` opens the local work cockpit.
 - `edifice review` opens the current weekly review.
 - `edifice status` reports the current paths, Inbox count, and Git state.
 
@@ -21,6 +22,19 @@ created: 2026-09-07
 4. The command writes prepared and committed audit events without copying the
    captured text into the audit log.
 5. Triage later. Never discard a capture silently.
+
+## Work context
+
+1. Start from one active work task, JIRA issue, repository, or document.
+2. Record its authoritative link and source identity.
+3. Gather only the context required for the current objective.
+4. Record source, classification, verification time, and persistence decision.
+5. Keep raw authoritative content in its work system when a link or summary is
+   sufficient.
+6. Store no secrets, credentials, restricted personal data, or uncontrolled
+   bulk exports.
+7. Keep external mutation disabled.
+8. Remove or relocate `20-work` before personal Sync is enabled.
 
 ## Daily start
 

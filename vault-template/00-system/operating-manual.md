@@ -8,7 +8,7 @@ created: 2026-09-07
 ## Purpose
 
 Use one durable local system to capture, choose, advance, review, and complete
-meaningful personal work without depending on conversation memory.
+meaningful work without depending on conversation memory.
 
 ## Kernel v0
 
@@ -26,6 +26,7 @@ Owner-facing commands:
 - `edifice start`
 - `edifice today`
 - `edifice work`
+- `edifice work-context`
 - `edifice review`
 - `edifice status`
 - `edifice capture`
@@ -33,8 +34,11 @@ Owner-facing commands:
 
 ## Boundaries
 
-- Personal-only content.
-- No Netflix work data.
+- Personal content and governed local work context use separate directories.
+- Work context remains under `20-work` and keeps source, classification, and
+  verification metadata.
+- Secrets, credentials, restricted personal data, and uncontrolled bulk
+  exports are prohibited.
 - No synchronization.
 - No external mutations.
 - No scheduled agents or background jobs.
@@ -43,7 +47,8 @@ Owner-facing commands:
 
 ## Authority
 
-- Obsidian Markdown owns durable personal operating state.
+- Obsidian Markdown owns durable personal operating state and local work
+  projections.
 - External systems remain authoritative for their own objects.
 - Human notes and final writing remain owner-controlled.
 - Agents may maintain reversible operational state within their allowed paths.

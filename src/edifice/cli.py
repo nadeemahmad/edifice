@@ -37,6 +37,11 @@ REQUIRED_VAULT_FILES = (
     Path(".obsidian/core-plugins.json"),
 )
 
+REQUIRED_WORK_FILES = (
+    Path("00-system/work-context-policy.md"),
+    Path("20-work/AGENTS.md"),
+)
+
 
 @click.group()
 @click.option(
@@ -113,6 +118,16 @@ def doctor(paths: RuntimePaths) -> None:
         joined = ", ".join(missing)
         raise click.ClickException(f"Missing required vault files: {joined}")
 
+    if (paths.vault_root / "20-work").is_dir():
+        missing_work_files = [
+            str(relative_path)
+            for relative_path in REQUIRED_WORK_FILES
+            if not (paths.vault_root / relative_path).is_file()
+        ]
+        if missing_work_files:
+            joined = ", ".join(missing_work_files)
+            raise click.ClickException(f"Missing required work files: {joined}")
+
     core_plugins_path = paths.vault_root / ".obsidian" / "core-plugins.json"
     core_plugins = json.loads(core_plugins_path.read_text(encoding="utf-8"))
     if core_plugins.get("sync") is True:
@@ -133,6 +148,13 @@ def start(paths: RuntimePaths) -> None:
 def work(paths: RuntimePaths) -> None:
     """Open the active project."""
     _open_note(paths, _current_pointer(paths, "work"))
+
+
+@cli.command("work-context")
+@click.pass_obj
+def work_context(paths: RuntimePaths) -> None:
+    """Open the local work-context cockpit."""
+    _open_note(paths, Path("20-work/home.md"))
 
 
 @cli.command()

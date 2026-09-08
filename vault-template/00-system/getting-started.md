@@ -29,6 +29,15 @@ edifice work
 
 Opens the project selected in `00-system/current.json`.
 
+## Open work context
+
+```text
+edifice work-context
+```
+
+Opens the local-only `20-work` cockpit. Work context may remain there only
+while Sync is disabled.
+
 ## Review the week
 
 ```text
@@ -68,7 +77,8 @@ Verifies the minimum vault structure and confirms Obsidian Sync is disabled.
 1. Run `edifice today`.
 2. Choose one intended result.
 3. Run `edifice work`.
-4. Capture interruptions without changing focus.
-5. Update the project resume point and daily closeout.
-6. Run `edifice status`.
-7. Use `edifice review` during the weekly review.
+4. Use `edifice work-context` when the active task needs work-system context.
+5. Capture interruptions without changing focus.
+6. Update the project resume point and daily closeout.
+7. Run `edifice status`.
+8. Use `edifice review` during the weekly review.

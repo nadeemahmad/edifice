@@ -82,6 +82,29 @@ def test_work_dry_run_uses_current_project_pointer(tmp_path: Path) -> None:
     assert result.output == f"Would open {project_path} in Obsidian.\n"
 
 
+def test_work_context_dry_run_opens_work_home(tmp_path: Path) -> None:
+    vault_root = tmp_path / "edifice"
+    work_home = Path("20-work/home.md")
+    target = vault_root / work_home
+    target.parent.mkdir(parents=True)
+    target.write_text("# Work\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "--vault",
+            str(vault_root),
+            "--audit-root",
+            str(tmp_path / "audit"),
+            "--dry-run",
+            "work-context",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.output == f"Would open {work_home} in Obsidian.\n"
+
+
 def test_today_dry_run_opens_selected_daily_review(tmp_path: Path) -> None:
     vault_root = tmp_path / "edifice"
     daily_path = Path("10-personal/operations/reviews/daily/2026-09-07.md")

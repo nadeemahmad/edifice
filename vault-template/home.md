@@ -21,6 +21,10 @@ created: 2026-09-07
 - [[reliable-personal-workflow]]
 - [[complete-first-deliverable]]
 
+## Work
+
+- [[20-work/home|Work context]]
+
 ## Reviews
 
 - [[2026-09-07-weekly|Weekly review]]

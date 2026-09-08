@@ -33,6 +33,11 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - `10-personal/operations`: agent-writeable operational state.
 - `10-personal/notes`: human-owned and agent-readable.
 - `10-personal/ai`: agent-writeable research and suggestions.
+- `20-work/operations`: governed work-task state and approved summaries.
+- `20-work/references`: links and verified projections from authoritative work
+  systems.
+- `20-work/ai`: enterprise-agent research and synthesis.
+- `20-work/run-reports`: append-only work-session reports.
 - `01-inbox/inbox.md`: append-only captures and reversible routing.
 - `00-system`: protected governance and configuration.
 - `90-archive`: read-only except for approved restore or retention work.

@@ -1,11 +1,13 @@
 # Edifice
 
-Kernel v0 is a local, personal-only operational system built around Obsidian.
+Kernel v0 is a local operational system built around Obsidian.
 
 ## Boundaries
 
 - The vault is local and unsynchronized.
-- Work data is prohibited.
+- Ordinary active-task work context may live under `20-work`.
+- Secrets, credentials, restricted personal data, and uncontrolled bulk
+  exports are prohibited.
 - External mutations and background jobs are disabled.
 - Human-owned notes are read-only to agents.
 - Captures use atomic writes and append-only audit evidence.
@@ -16,6 +18,7 @@ Kernel v0 is a local, personal-only operational system built around Obsidian.
 edifice start
 edifice today
 edifice work
+edifice work-context
 edifice review
 edifice status
 edifice doctor
