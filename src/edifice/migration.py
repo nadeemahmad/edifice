@@ -191,6 +191,8 @@ def plan_migration(
             item = _plan_attachment_item(relative_path, file_entry, source_kind)
         items.append(item)
     _disambiguate_targets(items)
+    candidate_counts = _candidate_counts(items)
+    work_source_count = candidate_counts.get("work-source", 0)
     mapping: dict[str, object] = {
         "schema_version": 1,
         "package_id": manifest["package_id"],
@@ -199,11 +201,16 @@ def plan_migration(
         "item_count": len(items),
         "markdown_count": markdown_count,
         "decision_counts": {"review": len(items)},
+        "candidate_counts": candidate_counts,
         "items": items,
     }
     _write_json(package / "mapping.json", mapping)
     manifest["status"] = "planned"
     manifest["mapping_sha256"] = _json_hash(mapping)
+    manifest["contains_work_content_candidates"] = work_source_count > 0
+    manifest["cloud_storage_status"] = (
+        "policy-blocked" if work_source_count else "unavailable"
+    )
     _write_json(package / "manifest.json", manifest)
     _replace_atomically(
         package / "report.md",
@@ -464,6 +471,63 @@ def _plan_attachment_item(
     file_entry: dict[str, object],
     source_kind: str,
 ) -> dict[str, object]:
+    top_level = relative_path.parts[0].casefold() if relative_path.parts else ""
+    if relative_path.parts and relative_path.parts[0] == ".obsidian":
+        return {
+            "source_id": _source_id(
+                source_kind,
+                relative_path,
+                cast(str, file_entry["sha256"]),
+            ),
+            "source_path": relative_path.as_posix(),
+            "source_sha256": file_entry["sha256"],
+            "title": relative_path.name,
+            "candidate_type": "configuration",
+            "proposed_target": None,
+            "confidence": "high",
+            "decision": "review",
+            "evidence_status": "verified",
+            "reasons": ["Obsidian configuration remains preserved in the raw package."],
+        }
+    if top_level in {"netflix", "work", "work notes"}:
+        return {
+            "source_id": _source_id(
+                source_kind,
+                relative_path,
+                cast(str, file_entry["sha256"]),
+            ),
+            "source_path": relative_path.as_posix(),
+            "source_sha256": file_entry["sha256"],
+            "title": relative_path.name,
+            "candidate_type": "work-source",
+            "proposed_target": None,
+            "confidence": "high",
+            "decision": "review",
+            "evidence_status": "verified",
+            "reasons": [
+                "Work-scoped material is not eligible for automatic personal migration."
+            ],
+        }
+    if top_level in {"readwise", "_sources", "sources"}:
+        return {
+            "source_id": _source_id(
+                source_kind,
+                relative_path,
+                cast(str, file_entry["sha256"]),
+            ),
+            "source_path": relative_path.as_posix(),
+            "source_sha256": file_entry["sha256"],
+            "title": relative_path.name,
+            "candidate_type": "source-artifact",
+            "proposed_target": (
+                Path("10-personal/sources/imported")
+                / _kebab_filename(relative_path.name)
+            ).as_posix(),
+            "confidence": "medium",
+            "decision": "review",
+            "evidence_status": "verified",
+            "reasons": ["Imported source media remains separate from human knowledge."],
+        }
     candidate_type = (
         "table-artifact"
         if relative_path.suffix.casefold() in {".csv", ".tsv"}
@@ -502,6 +566,7 @@ def _propose_note_route(
     task_count: int,
 ) -> tuple[str, str | None, str, list[str]]:
     lower_path = relative_path.as_posix().casefold()
+    top_level = relative_path.parts[0].casefold() if relative_path.parts else ""
     filename = _kebab_filename(relative_path.name)
     if relative_path.parts and relative_path.parts[0] == ".obsidian":
         return (
@@ -509,6 +574,20 @@ def _propose_note_route(
             None,
             "high",
             ["Obsidian configuration remains preserved in the raw package."],
+        )
+    if top_level in {"netflix", "work", "work notes"}:
+        return (
+            "work-source",
+            None,
+            "high",
+            ["Work-scoped material is not eligible for automatic personal migration."],
+        )
+    if top_level in {"readwise", "_sources", "sources"}:
+        return (
+            "source-note",
+            f"10-personal/sources/imported/{filename}",
+            "medium",
+            ["Imported source material remains separate from human knowledge."],
         )
     if (
         re.fullmatch(r"\d{4}-\d{2}-\d{2}", relative_path.stem)
@@ -574,6 +653,14 @@ def _disambiguate_targets(items: list[dict[str, object]]) -> None:
             ).as_posix()
             reasons = cast(list[str], item["reasons"])
             reasons.append("A deterministic hash suffix avoids a target collision.")
+
+
+def _candidate_counts(items: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        candidate_type = cast(str, item["candidate_type"])
+        counts[candidate_type] = counts.get(candidate_type, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _markdown_title(content: str, fallback: str) -> str:
@@ -688,10 +775,25 @@ def _write_migration_cockpit(
     markdown_line = (
         f"- Markdown notes: `{markdown_count}`\n" if markdown_count is not None else ""
     )
+    if status == "planned":
+        next_steps = f"""Review:
+
+`{package_path / "mapping.json"}`
+
+Then verify:
+
+```text
+edifice migrate verify {package_path}
+```"""
+    else:
+        next_steps = f"""```text
+edifice migrate plan {package_path}
+edifice migrate verify {package_path}
+```"""
     content = f"""---
 type: migration-home
 schema_version: 1
-created: {datetime.now().astimezone().date().isoformat()}
+created: {datetime.now(UTC).date().isoformat()}
 ---
 
 # Migrations
@@ -705,10 +807,7 @@ created: {datetime.now().astimezone().date().isoformat()}
 {markdown_line}
 ## Next
 
-```text
-edifice migrate plan {package_path}
-edifice migrate verify {package_path}
-```
+{next_steps}
 
 No source account or live note has been changed.
 """
@@ -752,6 +851,7 @@ def _plan_report(
 - Files: `{inventory["file_count"]}`
 - Markdown notes: `{mapping["markdown_count"]}`
 - Proposed items: `{mapping["item_count"]}`
+- Work-source candidates: `{cast(dict[str, int], mapping["candidate_counts"]).get("work-source", 0)}`
 - Decisions approved: `0`
 - Source mutation: `not-applicable`
 - Live-vault import: `not-applicable`

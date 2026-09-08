@@ -331,3 +331,63 @@ def test_coda_plan_treats_text_as_note_and_csv_as_table_artifact(
     assert planned.exit_code == 0
     assert by_source["Owned doc.txt"]["candidate_type"] == "knowledge"
     assert by_source["Owned table.csv"]["candidate_type"] == "table-artifact"
+
+
+def test_obsidian_plan_separates_work_sources_imports_and_configuration(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "legacy"
+    (source / "Netflix").mkdir(parents=True)
+    (source / "Netflix" / "Work project.md").write_text(
+        "# Work project\n",
+        encoding="utf-8",
+    )
+    (source / "Netflix" / "work-diagram.png").write_bytes(b"\x89PNG\r\nwork")
+    (source / "Readwise").mkdir()
+    (source / "Readwise" / "Imported article.md").write_text(
+        "# Imported article\n",
+        encoding="utf-8",
+    )
+    (source / "Readwise" / "article-image.png").write_bytes(b"\x89PNG\r\nsource")
+    (source / ".obsidian").mkdir()
+    (source / ".obsidian" / "app.json").write_text("{}\n", encoding="utf-8")
+    migrations_root = tmp_path / "migrations"
+    inventoried = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "obsidian",
+            "--path",
+            str(source),
+        ],
+    )
+    assert inventoried.exit_code == 0
+    package = next((migrations_root / "obsidian-personal").glob("*"))
+
+    planned = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "plan", str(package)],
+    )
+
+    mapping = json.loads((package / "mapping.json").read_text(encoding="utf-8"))
+    manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+    by_source = {item["source_path"]: item for item in mapping["items"]}
+    assert planned.exit_code == 0
+    assert by_source["Netflix/Work project.md"]["candidate_type"] == "work-source"
+    assert by_source["Netflix/Work project.md"]["proposed_target"] is None
+    assert by_source["Netflix/work-diagram.png"]["candidate_type"] == "work-source"
+    assert by_source["Netflix/work-diagram.png"]["proposed_target"] is None
+    assert by_source["Readwise/Imported article.md"]["candidate_type"] == "source-note"
+    assert (
+        by_source["Readwise/article-image.png"]["candidate_type"] == "source-artifact"
+    )
+    assert by_source[".obsidian/app.json"]["candidate_type"] == "configuration"
+    assert by_source[".obsidian/app.json"]["proposed_target"] is None
+    assert manifest["contains_work_content_candidates"] is True
+    assert manifest["cloud_storage_status"] == "policy-blocked"
