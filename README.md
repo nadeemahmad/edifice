@@ -28,6 +28,10 @@ edifice pdf backup-personal
 edifice pdf import-adobe plan
 edifice pdf import-adobe apply /absolute/path/manifest.json \
   --allow-incomplete-source --confirm-all-personal
+edifice migrate inventory --source obsidian --path /absolute/legacy-vault
+edifice migrate plan /absolute/migration-package
+edifice migrate verify /absolute/migration-package
+edifice migrate status
 edifice review
 edifice status
 edifice doctor
@@ -116,6 +120,35 @@ edifice pdf import-adobe apply /absolute/path/manifest.json \
 Cache-only plans additionally require `--allow-incomplete-source`. Apply
 rechecks every SHA-256, imports exact bytes through the personal PDF catalog,
 updates progress after each file, and never changes the Adobe source.
+
+## Source migration
+
+The installed launcher stores machine-local migration packages under:
+
+```text
+~/Library/Application Support/edifice/migrations
+```
+
+Inventory an existing Obsidian vault:
+
+```text
+edifice migrate inventory \
+  --source obsidian \
+  --path /absolute/path/to/legacy-vault
+```
+
+Inventory creates a complete read-only raw snapshot, hidden files and
+attachments included, with per-file and aggregate SHA-256 evidence. Planning
+then creates review-only content routing proposals:
+
+```text
+edifice migrate plan /absolute/path/to/package
+edifice migrate verify /absolute/path/to/package
+```
+
+No legacy source or live Edifice note is changed by inventory, planning, or
+verification. The raw package remains local and unencrypted until the personal
+migration archive encryption path is available.
 
 The launcher resolves:
 

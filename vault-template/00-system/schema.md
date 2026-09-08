@@ -29,6 +29,7 @@ Kernel v0 registers:
 - `work-context-run-report`
 - `pdf-catalog`
 - `adobe-pdf-import-review`
+- `migration-home`
 
 Tasks remain Markdown checkboxes in the note that owns their context.
 
@@ -48,6 +49,8 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - `20-work/references/pdf-catalog.*`: work PDF index and Markdown catalog.
 - `10-personal/operations/artifacts/imports`: staged Adobe import manifests and
   review notes.
+- `10-personal/operations/migrations`: owner-facing migration status and
+  resume instructions.
 - `01-inbox/inbox.md`: append-only captures and reversible routing.
 - `00-system`: protected governance and configuration.
 - `90-archive`: read-only except for approved restore or retention work.
@@ -94,3 +97,25 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - Apply rechecks the planned source path and SHA-256 before copying.
 - Each successful import records its storage path and timestamp immediately so
   interrupted runs can resume.
+
+## Migration package
+
+Machine-local packages contain:
+
+```text
+manifest.json
+inventory.json
+validation.json
+mapping.json
+report.md
+raw/
+proposed/
+```
+
+- `raw` preserves exact source bytes and is read-only.
+- `inventory.json` records paths, sizes, timestamps, modes, and SHA-256.
+- `mapping.json` contains review-only content routing proposals.
+- Stable source IDs derive from source path and content hash.
+- Packages remain outside the live vault and normal Git history.
+- Encryption remains unavailable until the personal archive key path is
+  qualified.

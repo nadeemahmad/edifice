@@ -20,6 +20,12 @@ from edifice.adobe_import import (
     plan_adobe_import,
 )
 from edifice.identifiers import new_uuid7
+from edifice.migration import (
+    inventory_obsidian_vault,
+    migration_status,
+    plan_migration,
+    verify_migration_package,
+)
 from edifice.pdf_library import (
     DOCUMENT_KINDS,
     add_pdf,
@@ -34,6 +40,7 @@ class RuntimePaths:
     vault_root: Path
     audit_root: Path
     personal_library_root: Path | None
+    migrations_root: Path | None
     dry_run: bool
 
 
@@ -49,6 +56,7 @@ REQUIRED_VAULT_FILES = (
     Path("01-inbox/inbox.md"),
     Path("10-personal/artifacts/AGENTS.md"),
     Path("10-personal/operations/artifacts/imports/AGENTS.md"),
+    Path("10-personal/operations/migrations/AGENTS.md"),
     Path(".obsidian/core-plugins.json"),
 )
 
@@ -79,6 +87,12 @@ REQUIRED_WORK_FILES = (
     type=click.Path(path_type=Path, file_okay=False),
     help="Personal Google Drive library path.",
 )
+@click.option(
+    "--migrations-root",
+    envvar="EDIFICE_MIGRATIONS_ROOT",
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Machine-local migration package root.",
+)
 @click.option("--dry-run", is_flag=True, help="Show effects without opening Obsidian.")
 @click.pass_context
 def cli(
@@ -86,6 +100,7 @@ def cli(
     vault_root: Path,
     audit_root: Path,
     personal_library_root: Path | None,
+    migrations_root: Path | None,
     dry_run: bool,
 ) -> None:
     """Operate the local Edifice system."""
@@ -93,6 +108,7 @@ def cli(
         vault_root=vault_root,
         audit_root=audit_root,
         personal_library_root=personal_library_root,
+        migrations_root=migrations_root,
         dry_run=dry_run,
     )
 
@@ -478,6 +494,117 @@ def apply_adobe_command(
             f"Drive library: {backup.copied} copied, {backup.verified} hash-verified."
         )
         click.echo("Drive sync status: unavailable.")
+
+
+@cli.group("migrate")
+def migrate_command() -> None:
+    """Inventory, plan, and verify source-preserving migrations."""
+
+
+@migrate_command.command("inventory")
+@click.option(
+    "--source",
+    "source_kind",
+    required=True,
+    type=click.Choice(["obsidian"], case_sensitive=False),
+)
+@click.option(
+    "--path",
+    "source_path",
+    required=True,
+    type=click.Path(path_type=Path, file_okay=False),
+)
+@click.pass_obj
+def inventory_migration_command(
+    paths: RuntimePaths,
+    source_kind: str,
+    source_path: Path,
+) -> None:
+    """Create an immutable local snapshot and inventory."""
+    migrations_root = _require_migrations_root(paths)
+    if source_kind != "obsidian":
+        raise click.ClickException(f"Unsupported migration source: {source_kind}")
+    result = inventory_obsidian_vault(
+        source_vault=source_path,
+        migrations_root=migrations_root,
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+    )
+    click.echo(f"Package: {result.package_path}.")
+    click.echo(
+        f"Snapshot: {result.file_count} files, "
+        f"{result.directory_count} directories, {result.total_bytes} bytes."
+    )
+
+
+@migrate_command.command("plan")
+@click.argument(
+    "package_path",
+    type=click.Path(path_type=Path, file_okay=False),
+)
+@click.pass_obj
+def plan_migration_command(paths: RuntimePaths, package_path: Path) -> None:
+    """Create review-only content routing proposals."""
+    migrations_root = _require_migrations_root(paths)
+    result = plan_migration(
+        package_path=package_path,
+        migrations_root=migrations_root,
+        vault_root=paths.vault_root,
+    )
+    click.echo(f"Planned: {result.package_path}.")
+    click.echo(
+        f"Mappings: {result.item_count}; Markdown notes: {result.markdown_count}."
+    )
+    click.echo("Approved mappings: 0.")
+
+
+@migrate_command.command("verify")
+@click.argument(
+    "package_path",
+    type=click.Path(path_type=Path, file_okay=False),
+)
+@click.pass_obj
+def verify_migration_command(paths: RuntimePaths, package_path: Path) -> None:
+    """Verify immutable raw snapshot bytes."""
+    migrations_root = _require_migrations_root(paths)
+    result = verify_migration_package(
+        package_path=package_path,
+        migrations_root=migrations_root,
+    )
+    for issue in result.issues:
+        click.echo(issue)
+    click.echo(
+        f"{result.verified} verified, "
+        f"{result.unavailable} unavailable, "
+        f"{result.mismatched} mismatched"
+    )
+    if result.unavailable or result.mismatched:
+        raise click.ClickException("Migration package verification failed.")
+
+
+@migrate_command.command("status")
+@click.pass_obj
+def migration_status_command(paths: RuntimePaths) -> None:
+    """List local migration packages."""
+    migrations_root = _require_migrations_root(paths)
+    packages = migration_status(migrations_root)
+    if not packages:
+        click.echo("No migration packages.")
+        return
+    for package in packages:
+        click.echo(
+            f"{package['source']}-{package['profile']}: "
+            f"{package['status']} ({package['path']})"
+        )
+
+
+def _require_migrations_root(paths: RuntimePaths) -> Path:
+    if paths.migrations_root is None:
+        raise click.ClickException(
+            "Migration root is not configured. Set EDIFICE_MIGRATIONS_ROOT "
+            "or pass --migrations-root."
+        )
+    return paths.migrations_root
 
 
 @cli.command()

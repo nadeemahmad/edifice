@@ -151,6 +151,34 @@ For a cache-only partial import, also pass `--allow-incomplete-source`.
 Edifice verifies every source hash again, imports through the normal PDF
 catalog, records progress after each file, and leaves Adobe unchanged.
 
+## Migrate an existing Obsidian vault
+
+Create a complete machine-local snapshot:
+
+```text
+edifice migrate inventory \
+  --source obsidian \
+  --path /absolute/path/to/legacy-vault
+```
+
+The command copies no material into the live Edifice vault. It creates an
+immutable raw package with hashes, validation, and a cockpit resume point.
+
+Create review-only routing proposals:
+
+```text
+edifice migrate plan /absolute/path/to/package
+```
+
+Verify package integrity:
+
+```text
+edifice migrate verify /absolute/path/to/package
+edifice migrate status
+```
+
+All mappings remain `review`. Applying selected notes is a later explicit step.
+
 ## Review the week
 
 ```text
@@ -195,8 +223,9 @@ Verifies the minimum vault structure and confirms Obsidian Sync is disabled.
 6. Use `edifice pdf add` for any PDF that should become a managed local copy.
 7. Use `edifice pdf import-adobe plan` for staged Adobe consolidation.
 8. Run `edifice pdf backup-personal` to repair or verify Drive backing.
-9. Add or edit manual context directly in Obsidian.
-10. Capture interruptions without changing focus.
-11. Update the project resume point and daily closeout.
-12. Run `edifice status`.
-13. Use `edifice review` during the weekly review.
+9. Use `edifice migrate status` to resume staged source migrations.
+10. Add or edit manual context directly in Obsidian.
+11. Capture interruptions without changing focus.
+12. Update the project resume point and daily closeout.
+13. Run `edifice status`.
+14. Use `edifice review` during the weekly review.

@@ -1,0 +1,247 @@
+import json
+import stat
+from pathlib import Path
+
+from click.testing import CliRunner
+
+from edifice.cli import cli
+
+
+def _create_legacy_vault(path: Path) -> Path:
+    (path / ".obsidian").mkdir(parents=True)
+    (path / ".obsidian" / "app.json").write_text(
+        '{"attachmentFolderPath":"attachments"}\n',
+        encoding="utf-8",
+    )
+    (path / "Projects").mkdir()
+    (path / "Projects" / "Build a system.md").write_text(
+        "# Build a system\n\n- [ ] Define the next action\n",
+        encoding="utf-8",
+    )
+    (path / "Notes").mkdir()
+    (path / "Notes" / "Distributed systems.md").write_text(
+        "# Distributed systems\n\nLinks to [[Build a system]].\n",
+        encoding="utf-8",
+    )
+    (path / "attachments").mkdir()
+    (path / "attachments" / "diagram.png").write_bytes(b"\x89PNG\r\nfixture")
+    (path / "empty-folder").mkdir()
+    return path
+
+
+def _invoke(
+    *,
+    vault_root: Path,
+    audit_root: Path,
+    migrations_root: Path,
+    arguments: list[str],
+):
+    return CliRunner().invoke(
+        cli,
+        [
+            "--vault",
+            str(vault_root),
+            "--audit-root",
+            str(audit_root),
+            *arguments,
+        ],
+        env={"EDIFICE_MIGRATIONS_ROOT": str(migrations_root)},
+    )
+
+
+def _package_path(migrations_root: Path) -> Path:
+    packages = list((migrations_root / "obsidian-personal").glob("*"))
+    assert len(packages) == 1
+    return packages[0]
+
+
+def test_migration_inventory_snapshots_complete_obsidian_fixture_without_mutation(
+    tmp_path: Path,
+) -> None:
+    source_vault = _create_legacy_vault(tmp_path / "legacy")
+    source_before = {
+        path.relative_to(source_vault): path.read_bytes()
+        for path in source_vault.rglob("*")
+        if path.is_file()
+    }
+    vault_root = tmp_path / "edifice"
+    migrations_root = tmp_path / "migrations"
+
+    result = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "obsidian",
+            "--path",
+            str(source_vault),
+        ],
+    )
+
+    package = _package_path(migrations_root)
+    inventory = json.loads((package / "inventory.json").read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert inventory["file_count"] == 4
+    assert inventory["directory_count"] == 6
+    assert (package / "raw" / ".obsidian" / "app.json").is_file()
+    assert (package / "raw" / "attachments" / "diagram.png").read_bytes() == (
+        b"\x89PNG\r\nfixture"
+    )
+    assert (package / "raw" / "empty-folder").is_dir()
+    assert all(
+        not (path.stat().st_mode & stat.S_IWUSR)
+        for path in (package / "raw").rglob("*")
+        if path.is_file()
+    )
+    assert source_before == {
+        path.relative_to(source_vault): path.read_bytes()
+        for path in source_vault.rglob("*")
+        if path.is_file()
+    }
+    assert not list((vault_root / "10-personal" / "notes").rglob("*.md"))
+    assert (
+        vault_root / "10-personal" / "operations" / "migrations" / "home.md"
+    ).is_file()
+
+
+def test_migration_plan_creates_review_mappings_without_live_import(
+    tmp_path: Path,
+) -> None:
+    source_vault = _create_legacy_vault(tmp_path / "legacy")
+    vault_root = tmp_path / "edifice"
+    migrations_root = tmp_path / "migrations"
+    inventoried = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "obsidian",
+            "--path",
+            str(source_vault),
+        ],
+    )
+    assert inventoried.exit_code == 0
+    package = _package_path(migrations_root)
+
+    result = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "plan", str(package)],
+    )
+
+    mapping = json.loads((package / "mapping.json").read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert mapping["markdown_count"] == 2
+    by_source = {item["source_path"]: item for item in mapping["items"]}
+    project = by_source["Projects/Build a system.md"]
+    note = by_source["Notes/Distributed systems.md"]
+    assert project["title"] == "Build a system"
+    assert project["candidate_type"] == "project"
+    assert project["task_count"] == 1
+    assert project["decision"] == "review"
+    assert note["candidate_type"] == "knowledge"
+    assert note["wiki_link_count"] == 1
+    assert not list((vault_root / "10-personal" / "notes").rglob("*.md"))
+
+
+def test_migration_verify_detects_changed_raw_file(tmp_path: Path) -> None:
+    source_vault = _create_legacy_vault(tmp_path / "legacy")
+    migrations_root = tmp_path / "migrations"
+    inventoried = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "obsidian",
+            "--path",
+            str(source_vault),
+        ],
+    )
+    assert inventoried.exit_code == 0
+    package = _package_path(migrations_root)
+    healthy = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "verify", str(package)],
+    )
+    raw_note = package / "raw" / "Notes" / "Distributed systems.md"
+    raw_note.chmod(0o600)
+    raw_note.write_text("changed", encoding="utf-8")
+    changed = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "verify", str(package)],
+    )
+
+    assert healthy.exit_code == 0
+    assert "4 verified, 0 unavailable, 0 mismatched" in healthy.output
+    assert changed.exit_code != 0
+    assert "[mismatched] Notes/Distributed systems.md" in changed.output
+
+
+def test_migration_inventory_rejects_symlinked_source_content(
+    tmp_path: Path,
+) -> None:
+    source_vault = _create_legacy_vault(tmp_path / "legacy")
+    (source_vault / "unsafe-link").symlink_to("/tmp")
+    migrations_root = tmp_path / "migrations"
+
+    result = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "obsidian",
+            "--path",
+            str(source_vault),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Symlinks are not supported" in result.output
+    assert not list(migrations_root.rglob("manifest.json"))
+
+
+def test_migration_status_lists_created_package(tmp_path: Path) -> None:
+    source_vault = _create_legacy_vault(tmp_path / "legacy")
+    migrations_root = tmp_path / "migrations"
+    inventoried = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "obsidian",
+            "--path",
+            str(source_vault),
+        ],
+    )
+    assert inventoried.exit_code == 0
+
+    result = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "status"],
+    )
+
+    assert result.exit_code == 0
+    assert "obsidian-personal" in result.output
+    assert "inventory-complete" in result.output

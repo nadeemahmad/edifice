@@ -19,6 +19,10 @@ created: 2026-09-07
 - `edifice pdf import-adobe plan` creates a non-importing Adobe review
   manifest.
 - `edifice pdf import-adobe apply` imports approved personal entries.
+- `edifice migrate inventory` creates a complete source snapshot and inventory.
+- `edifice migrate plan` creates review-only routing proposals.
+- `edifice migrate verify` validates raw package bytes.
+- `edifice migrate status` lists resumable packages.
 - `edifice review` opens the current weekly review.
 - `edifice status` reports the current paths, Inbox count, and Git state.
 
@@ -81,6 +85,20 @@ created: 2026-09-07
 8. Record progress after each successful import so a stopped run can resume.
 9. Run `edifice pdf inventory`.
 10. Keep Adobe files unchanged until a separate retention decision.
+
+## Legacy source migration
+
+1. Inventory one source at a time.
+2. Copy exact source bytes into a machine-local raw package.
+3. Hash every source and copied file and fail if the source changes during
+   inventory.
+4. Keep raw files read-only.
+5. Verify the package before planning.
+6. Propose destinations according to content, not the old folder hierarchy.
+7. Keep every mapping in `review`.
+8. Import no live note until a separate approved apply step exists.
+9. Preserve the full package for migrate-on-touch and later validation.
+10. Do not delete or quarantine the source account during this phase.
 
 ## Daily start
 

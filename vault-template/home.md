@@ -25,6 +25,10 @@ created: 2026-09-07
 
 - [[20-work/home|Work context]]
 
+## Migrations
+
+- [[10-personal/operations/migrations/home|Migration cockpit]]
+
 ## Reviews
 
 - [[2026-09-07-weekly|Weekly review]]

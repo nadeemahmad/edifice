@@ -33,6 +33,10 @@ Owner-facing commands:
 - `edifice pdf backup-personal`
 - `edifice pdf import-adobe plan`
 - `edifice pdf import-adobe apply`
+- `edifice migrate inventory`
+- `edifice migrate plan`
+- `edifice migrate verify`
+- `edifice migrate status`
 - `edifice review`
 - `edifice status`
 - `edifice capture`
@@ -56,6 +60,8 @@ Owner-facing commands:
 - Personal PDF additions and Adobe applies reconcile to
   `~/My Drive/Library`; local hashes are verified without claiming remote sync
   completion.
+- Legacy source migrations use immutable machine-local packages, review-only
+  mappings, explicit verification, and no source or live-note mutation.
 - Secrets, credentials, restricted personal data, and uncontrolled bulk
   exports are prohibited.
 - No synchronization.

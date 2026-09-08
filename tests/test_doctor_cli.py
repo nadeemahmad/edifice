@@ -17,6 +17,7 @@ REQUIRED_FILES = [
     "01-inbox/inbox.md",
     "10-personal/artifacts/AGENTS.md",
     "10-personal/operations/artifacts/imports/AGENTS.md",
+    "10-personal/operations/migrations/AGENTS.md",
     ".obsidian/core-plugins.json",
 ]
 
