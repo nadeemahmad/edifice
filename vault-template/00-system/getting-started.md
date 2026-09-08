@@ -179,6 +179,16 @@ edifice migrate status
 
 All mappings remain `review`. Applying selected notes is a later explicit step.
 
+Craft and Coda exports use the same commands:
+
+```text
+edifice migrate inventory --source craft --path /absolute/craft-export
+edifice migrate inventory --source coda --path /absolute/coda-export
+```
+
+Craft TextBundle attachments remain linked inside the raw package. Coda text
+documents and table exports receive separate review mappings.
+
 ## Review the week
 
 ```text

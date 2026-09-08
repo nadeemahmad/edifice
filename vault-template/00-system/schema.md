@@ -116,6 +116,11 @@ proposed/
 - `inventory.json` records paths, sizes, timestamps, modes, and SHA-256.
 - `mapping.json` contains review-only content routing proposals.
 - Stable source IDs derive from source path and content hash.
+- Supported source kinds are `obsidian`, `craft`, and `coda`.
+- Craft Markdown and text become note candidates; TextBundle media remains
+  artifact candidates.
+- Coda text becomes note candidates; CSV and TSV become table-artifact
+  candidates.
 - Packages remain outside the live vault and normal Git history.
 - Encryption remains unavailable until the personal archive key path is
   qualified.

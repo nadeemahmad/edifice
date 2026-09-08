@@ -99,6 +99,9 @@ created: 2026-09-07
 8. Import no live note until a separate approved apply step exists.
 9. Preserve the full package for migrate-on-touch and later validation.
 10. Do not delete or quarantine the source account during this phase.
+11. Use TextBundle or Markdown exports for Craft.
+12. Use the personal Coda account export, keeping text and table files
+    together in one source package.
 
 ## Daily start
 

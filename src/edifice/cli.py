@@ -21,7 +21,7 @@ from edifice.adobe_import import (
 )
 from edifice.identifiers import new_uuid7
 from edifice.migration import (
-    inventory_obsidian_vault,
+    inventory_source_directory,
     migration_status,
     plan_migration,
     verify_migration_package,
@@ -506,7 +506,7 @@ def migrate_command() -> None:
     "--source",
     "source_kind",
     required=True,
-    type=click.Choice(["obsidian"], case_sensitive=False),
+    type=click.Choice(["obsidian", "craft", "coda"], case_sensitive=False),
 )
 @click.option(
     "--path",
@@ -522,10 +522,9 @@ def inventory_migration_command(
 ) -> None:
     """Create an immutable local snapshot and inventory."""
     migrations_root = _require_migrations_root(paths)
-    if source_kind != "obsidian":
-        raise click.ClickException(f"Unsupported migration source: {source_kind}")
-    result = inventory_obsidian_vault(
-        source_vault=source_path,
+    result = inventory_source_directory(
+        source_kind=source_kind,
+        source_path=source_path,
         migrations_root=migrations_root,
         vault_root=paths.vault_root,
         audit_root=paths.audit_root,

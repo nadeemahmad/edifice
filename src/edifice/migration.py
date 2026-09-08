@@ -50,8 +50,28 @@ def inventory_obsidian_vault(
     audit_root: Path,
 ) -> MigrationInventoryResult:
     """Create a complete local read-only snapshot of an Obsidian vault."""
-    source = _validate_source_directory(source_vault, migrations_root, vault_root)
-    source_name = "obsidian-personal"
+    return inventory_source_directory(
+        source_kind="obsidian",
+        source_path=source_vault,
+        migrations_root=migrations_root,
+        vault_root=vault_root,
+        audit_root=audit_root,
+    )
+
+
+def inventory_source_directory(
+    *,
+    source_kind: str,
+    source_path: Path,
+    migrations_root: Path,
+    vault_root: Path,
+    audit_root: Path,
+) -> MigrationInventoryResult:
+    """Create a complete local snapshot for a supported personal source."""
+    if source_kind not in {"obsidian", "craft", "coda"}:
+        raise click.ClickException(f"Unsupported migration source: {source_kind}")
+    source = _validate_source_directory(source_path, migrations_root, vault_root)
+    source_name = f"{source_kind}-personal"
     package_parent = migrations_root.expanduser().resolve() / source_name
     package_parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC)
@@ -67,7 +87,7 @@ def inventory_obsidian_vault(
         total_bytes = sum(cast(int, item["size_bytes"]) for item in files)
         inventory: dict[str, object] = {
             "schema_version": 1,
-            "source_kind": "obsidian",
+            "source_kind": source_kind,
             "source_path": str(source),
             "file_count": len(files),
             "directory_count": len(directories),
@@ -81,7 +101,7 @@ def inventory_obsidian_vault(
             "package_id": f"migration-{new_uuid7()}",
             "created_at": timestamp.isoformat(),
             "profile": "personal",
-            "source_kind": "obsidian",
+            "source_kind": source_kind,
             "source_path": str(source),
             "status": "inventory-complete",
             "storage": "local-machine-only",
@@ -115,6 +135,7 @@ def inventory_obsidian_vault(
     _write_migration_cockpit(
         vault_root=vault_root,
         package_path=package_path,
+        source_kind=source_kind,
         status="inventory-complete",
         file_count=len(files),
         markdown_count=None,
@@ -150,17 +171,24 @@ def plan_migration(
         raise click.ClickException("Migration package verification failed.")
     manifest = _load_json_object(package / "manifest.json")
     inventory = _load_json_object(package / "inventory.json")
+    source_kind = cast(str, manifest["source_kind"])
     items: list[dict[str, object]] = []
     markdown_count = 0
     for entry in cast(list[object], inventory["files"]):
         file_entry = cast(dict[str, object], entry)
         relative_path = Path(cast(str, file_entry["path"]))
         raw_path = package / "raw" / relative_path
-        if relative_path.suffix.casefold() == ".md":
-            markdown_count += 1
-            item = _plan_markdown_item(raw_path, relative_path, file_entry)
+        if relative_path.suffix.casefold() in {".md", ".markdown", ".txt"}:
+            if relative_path.suffix.casefold() in {".md", ".markdown"}:
+                markdown_count += 1
+            item = _plan_text_item(
+                raw_path,
+                relative_path,
+                file_entry,
+                source_kind,
+            )
         else:
-            item = _plan_attachment_item(relative_path, file_entry)
+            item = _plan_attachment_item(relative_path, file_entry, source_kind)
         items.append(item)
     _disambiguate_targets(items)
     mapping: dict[str, object] = {
@@ -184,6 +212,7 @@ def plan_migration(
     _write_migration_cockpit(
         vault_root=vault_root,
         package_path=package,
+        source_kind=source_kind,
         status="planned",
         file_count=cast(int, inventory["file_count"]),
         markdown_count=markdown_count,
@@ -386,10 +415,11 @@ def _write_raw_file(path: Path, content: bytes, modified_ns: int) -> None:
     path.chmod(0o400)
 
 
-def _plan_markdown_item(
+def _plan_text_item(
     raw_path: Path,
     relative_path: Path,
     file_entry: dict[str, object],
+    source_kind: str,
 ) -> dict[str, object]:
     try:
         content = raw_path.read_text(encoding="utf-8")
@@ -408,7 +438,11 @@ def _plan_markdown_item(
         task_count=task_count,
     )
     return {
-        "source_id": _source_id(relative_path, cast(str, file_entry["sha256"])),
+        "source_id": _source_id(
+            source_kind,
+            relative_path,
+            cast(str, file_entry["sha256"]),
+        ),
         "source_path": relative_path.as_posix(),
         "source_sha256": file_entry["sha256"],
         "title": title,
@@ -428,20 +462,36 @@ def _plan_markdown_item(
 def _plan_attachment_item(
     relative_path: Path,
     file_entry: dict[str, object],
+    source_kind: str,
 ) -> dict[str, object]:
+    candidate_type = (
+        "table-artifact"
+        if relative_path.suffix.casefold() in {".csv", ".tsv"}
+        else "artifact"
+    )
     return {
-        "source_id": _source_id(relative_path, cast(str, file_entry["sha256"])),
+        "source_id": _source_id(
+            source_kind,
+            relative_path,
+            cast(str, file_entry["sha256"]),
+        ),
         "source_path": relative_path.as_posix(),
         "source_sha256": file_entry["sha256"],
         "title": relative_path.name,
-        "candidate_type": "artifact",
+        "candidate_type": candidate_type,
         "proposed_target": (
             Path("10-personal/artifacts/imported") / _kebab_filename(relative_path.name)
         ).as_posix(),
         "confidence": "low",
         "decision": "review",
         "evidence_status": "verified",
-        "reasons": ["Non-Markdown attachment requires artifact review."],
+        "reasons": [
+            (
+                "Structured table export requires table and schema review."
+                if candidate_type == "table-artifact"
+                else "Non-text attachment requires artifact review."
+            )
+        ],
     }
 
 
@@ -533,8 +583,8 @@ def _markdown_title(content: str, fallback: str) -> str:
     return " ".join(match.group(1).split())
 
 
-def _source_id(relative_path: Path, source_hash: str) -> str:
-    value = f"obsidian:{relative_path.as_posix()}:{source_hash}"
+def _source_id(source_kind: str, relative_path: Path, source_hash: str) -> str:
+    value = f"{source_kind}:{relative_path.as_posix()}:{source_hash}"
     return f"source-{uuid.uuid5(MIGRATION_NAMESPACE, value)}"
 
 
@@ -630,6 +680,7 @@ def _write_migration_cockpit(
     *,
     vault_root: Path,
     package_path: Path,
+    source_kind: str,
     status: str,
     file_count: int,
     markdown_count: int | None,
@@ -647,7 +698,7 @@ created: {datetime.now().astimezone().date().isoformat()}
 
 ## Current package
 
-- Source: `obsidian`
+- Source: `{source_kind}`
 - Status: `{status}`
 - Package: `{package_path}`
 - Files: `{file_count}`

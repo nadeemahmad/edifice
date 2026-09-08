@@ -2,6 +2,7 @@ import json
 import stat
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from edifice.cli import cli
@@ -245,3 +246,88 @@ def test_migration_status_lists_created_package(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "obsidian-personal" in result.output
     assert "inventory-complete" in result.output
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "file_name"),
+    [
+        ("craft", "Export.textbundle/text.md"),
+        ("coda", "Owned doc.txt"),
+    ],
+)
+def test_migration_inventory_supports_craft_and_coda_export_directories(
+    tmp_path: Path,
+    source_kind: str,
+    file_name: str,
+) -> None:
+    source = tmp_path / f"{source_kind}-export"
+    source_file = source / file_name
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text("# Exported note\n", encoding="utf-8")
+    if source_kind == "coda":
+        (source / "Owned table.csv").write_text("name,value\none,1\n", encoding="utf-8")
+    migrations_root = tmp_path / "migrations"
+
+    inventoried = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            source_kind,
+            "--path",
+            str(source),
+        ],
+    )
+
+    packages = list((migrations_root / f"{source_kind}-personal").glob("*"))
+    assert inventoried.exit_code == 0
+    assert len(packages) == 1
+    manifest = json.loads((packages[0] / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["source_kind"] == source_kind
+
+
+def test_coda_plan_treats_text_as_note_and_csv_as_table_artifact(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "coda-export"
+    source.mkdir()
+    (source / "Owned doc.txt").write_text(
+        "Owned doc\n\nA durable idea.\n",
+        encoding="utf-8",
+    )
+    (source / "Owned table.csv").write_text(
+        "name,value\none,1\n",
+        encoding="utf-8",
+    )
+    migrations_root = tmp_path / "migrations"
+    inventoried = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "inventory",
+            "--source",
+            "coda",
+            "--path",
+            str(source),
+        ],
+    )
+    assert inventoried.exit_code == 0
+    package = next((migrations_root / "coda-personal").glob("*"))
+
+    planned = _invoke(
+        vault_root=tmp_path / "edifice",
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "plan", str(package)],
+    )
+
+    mapping = json.loads((package / "mapping.json").read_text(encoding="utf-8"))
+    by_source = {item["source_path"]: item for item in mapping["items"]}
+    assert planned.exit_code == 0
+    assert by_source["Owned doc.txt"]["candidate_type"] == "knowledge"
+    assert by_source["Owned table.csv"]["candidate_type"] == "table-artifact"

@@ -29,6 +29,8 @@ edifice pdf import-adobe plan
 edifice pdf import-adobe apply /absolute/path/manifest.json \
   --allow-incomplete-source --confirm-all-personal
 edifice migrate inventory --source obsidian --path /absolute/legacy-vault
+edifice migrate inventory --source craft --path /absolute/craft-export
+edifice migrate inventory --source coda --path /absolute/coda-export
 edifice migrate plan /absolute/migration-package
 edifice migrate verify /absolute/migration-package
 edifice migrate status
@@ -149,6 +151,17 @@ edifice migrate verify /absolute/path/to/package
 No legacy source or live Edifice note is changed by inventory, planning, or
 verification. The raw package remains local and unencrypted until the personal
 migration archive encryption path is available.
+
+Craft and Coda exports use the same pipeline:
+
+```text
+edifice migrate inventory --source craft --path /absolute/craft-export
+edifice migrate inventory --source coda --path /absolute/coda-export
+```
+
+Craft Markdown and TextBundle contents become protected-note and attachment
+candidates. Coda text documents become note candidates, while CSV and TSV
+exports become table-artifact candidates. Every mapping remains `review`.
 
 The launcher resolves:
 
