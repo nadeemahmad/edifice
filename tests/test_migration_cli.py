@@ -722,3 +722,95 @@ def test_migration_apply_rejects_mapping_changed_after_approval(
     assert applied.exit_code != 0
     assert "mapping changed after approval" in applied.output
     assert not list((vault_root / "10-personal" / "notes").rglob("*.md"))
+
+
+def test_migration_supports_sequential_approved_batches(tmp_path: Path) -> None:
+    source = _create_essentials_vault(tmp_path / "legacy")
+    (source / "Writing").mkdir()
+    (source / "Writing" / "Essay.md").write_text(
+        "# Essay\n\nAn exact writing draft.\n",
+        encoding="utf-8",
+    )
+    vault_root = tmp_path / "edifice"
+    migrations_root = tmp_path / "migrations"
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=[
+                "migrate",
+                "inventory",
+                "--source",
+                "obsidian",
+                "--path",
+                str(source),
+            ],
+        ).exit_code
+        == 0
+    )
+    package = next((migrations_root / "obsidian-personal").glob("*"))
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=["migrate", "plan", str(package)],
+        ).exit_code
+        == 0
+    )
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=[
+                "migrate",
+                "approve",
+                str(package),
+                "--source-prefix",
+                "Essentials/",
+                "--route",
+                "protected-note",
+            ],
+        ).exit_code
+        == 0
+    )
+    assert (
+        _invoke(
+            vault_root=vault_root,
+            audit_root=tmp_path / "audit",
+            migrations_root=migrations_root,
+            arguments=["migrate", "apply", str(package)],
+        ).exit_code
+        == 0
+    )
+
+    approved_writing = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=[
+            "migrate",
+            "approve",
+            str(package),
+            "--source-prefix",
+            "Writing/",
+            "--route",
+            "protected-note",
+        ],
+    )
+    applied_writing = _invoke(
+        vault_root=vault_root,
+        audit_root=tmp_path / "audit",
+        migrations_root=migrations_root,
+        arguments=["migrate", "apply", str(package)],
+    )
+
+    assert approved_writing.exit_code == 0
+    assert "Approved: 1" in approved_writing.output
+    assert applied_writing.exit_code == 0
+    assert "Imported: 1; already imported: 3" in applied_writing.output
+    assert (vault_root / "10-personal" / "notes" / "imported" / "essay.md").read_text(
+        encoding="utf-8"
+    ) == "# Essay\n\nAn exact writing draft.\n"

@@ -276,8 +276,7 @@ def approve_migration_batch(
     mapping_path = package / "mapping.json"
     manifest = _load_json_object(manifest_path)
     mapping = _load_json_object(mapping_path)
-    if _json_hash(mapping) != manifest.get("mapping_sha256"):
-        raise click.ClickException("Migration mapping changed after planning.")
+    approval_basis_hash = _approval_basis_hash(manifest, mapping)
     items = cast(list[object], mapping["items"])
     selected = [
         cast(dict[str, object], item)
@@ -294,7 +293,6 @@ def approve_migration_batch(
     approved = 0
     already_approved = 0
     approval_time = datetime.now(UTC).isoformat()
-    plan_mapping_hash = cast(str, manifest["mapping_sha256"])
     for item in selected:
         approved_target = _approval_target(item, route)
         if (
@@ -313,7 +311,7 @@ def approve_migration_batch(
             "approved_at": approval_time,
             "route": route,
             "source_prefix": normalized_prefix,
-            "plan_mapping_sha256": plan_mapping_hash,
+            "approval_basis_sha256": approval_basis_hash,
         }
         approved += 1
     _validate_approved_targets(items)
@@ -994,6 +992,21 @@ def _approval_hash(mapping: dict[str, object]) -> str:
         "items": items,
     }
     return _json_hash(payload)
+
+
+def _approval_basis_hash(
+    manifest: dict[str, object],
+    mapping: dict[str, object],
+) -> str:
+    approved_hash = manifest.get("approved_mapping_sha256")
+    if isinstance(approved_hash, str):
+        if _approval_hash(mapping) != approved_hash:
+            raise click.ClickException("Migration mapping changed after approval.")
+        return approved_hash
+    plan_hash = manifest.get("mapping_sha256")
+    if not isinstance(plan_hash, str) or _json_hash(mapping) != plan_hash:
+        raise click.ClickException("Migration mapping changed after planning.")
+    return plan_hash
 
 
 def _preflight_apply(
