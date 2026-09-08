@@ -12,7 +12,7 @@ created: 2026-09-07
 
 ## Needs attention
 
-- [[select-first-deliverable|What should the first deliverable be?]]
+- [[select-first-deliverable|What should Edifice gather first?]]
 - [[inbox|Inbox]]
 
 ## Current direction

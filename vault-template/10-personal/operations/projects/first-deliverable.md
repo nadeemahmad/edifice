@@ -12,19 +12,20 @@ primary_anchor: "[[complete-first-deliverable]]"
 
 ## Result
 
-Complete one real personal deliverable using the frozen Kernel v0 workflow.
+Complete one read-only work-context brief using Edifice.
 
 ## Current state
 
-Kernel v0 is being prepared. The deliverable is not selected.
+The work cockpit is ready. The JIRA issue and repository are not selected.
 
 ## Resume point
 
-Choose the first deliverable after Kernel v0 passes doctor and recovery checks.
+Choose one active work task and repository, then gather bounded context without
+external mutation.
 
 ## Tasks
 
-- [ ] Choose the first real deliverable. ^task-01a07dd6-cefc-7116-8026-dc9bf9df4123
+- [ ] Choose one JIRA issue and repository for the first context brief. ^task-01a07dd6-cefc-7116-8026-dc9bf9df4123
 
 ## Questions
 
@@ -32,4 +33,4 @@ Choose the first deliverable after Kernel v0 passes doctor and recovery checks.
 
 ## Completion
 
-Completion requires the finished artifact and the owner's explicit approval.
+Completion requires a source-linked brief and the owner's explicit approval.

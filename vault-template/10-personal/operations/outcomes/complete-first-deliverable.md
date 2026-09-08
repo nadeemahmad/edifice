@@ -15,17 +15,18 @@ target_date: 2026-09-21
 
 ## Success condition
 
-One real personal deliverable reaches an owner-approved completion state inside
-the frozen Kernel v0 workflow.
+One real read-only work-context brief reaches an owner-approved completion
+state inside Edifice.
 
 ## Why it matters
 
-This is the first evidence that the system supports delivery rather than only
+This is the first evidence that Edifice can support real work rather than only
 its own construction.
 
 ## Current evidence
 
-Kernel v0 is being assembled. The first deliverable has not been selected.
+The governed `20-work` area is live. The first JIRA issue and repository have
+not been selected.
 
 ## Projects
 
