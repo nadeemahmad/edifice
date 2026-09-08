@@ -28,6 +28,7 @@ created: 2026-09-07
 ## Migrations
 
 - [[10-personal/operations/migrations/home|Migration cockpit]]
+- [[10-personal/operations/migrations/enrichment-review|Imported-note enrichment review]]
 
 ## Reviews
 
