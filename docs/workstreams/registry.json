@@ -153,8 +153,8 @@
     {
       "id": "repository-organization",
       "title": "Repository Organization",
-      "status": "active",
-      "mode": "implementation",
+      "status": "committed",
+      "mode": "review",
       "context": "docs/workstreams/repository-organization.md",
       "owned_paths": [
         "AGENTS.md",

@@ -1,7 +1,8 @@
 ---
 id: repository-organization
-status: active
-mode: implementation
+status: committed
+mode: review
+verified_revision: 4bef93664e6fb8b626fa4a1ebee08be5ef594d27
 ---
 
 # Repository Organization
@@ -21,6 +22,7 @@ work on separate Edifice workstreams without relying on conversation history.
 - A verified recovery snapshot exists outside the repository.
 - A fresh read-only agent reconstructed its assignment, authority, branch,
   revision, and safety constraints without conversation history.
+- Independent review at the verified revision found no high or medium defects.
 
 ## Proposed Owned Files
 
@@ -47,11 +49,24 @@ work on separate Edifice workstreams without relying on conversation history.
 - Run a clean-agent orientation exercise.
 - Run full deterministic repository checks after organization.
 
+Completed evidence:
+
+- Full pytest: 118 passed.
+- Ruff lint and format: passed.
+- Strict Pyright: 0 errors or warnings.
+- Branch and working tree: clean.
+- Independent focused checks: 23 passed.
+- Independent findings: no high or medium defects.
+
 ## Known Gaps
 
-- Complete repository verification and independent final review remain.
 - The first real concurrent feature assignment has not yet exercised the
   worktree protocol.
+- The low-severity work-task `primary_anchor` decision remains open.
+- Document-review add and synthesis lack one shared cross-process lock and
+  complete audit contract.
+- Inbox recovery assumes one intact canonical source link when repairing a
+  damaged destination.
 
 Resolved during this workstream:
 
@@ -63,6 +78,12 @@ Resolved during this workstream:
 - Every changed branch path must have registered ownership.
 - Active assignments receive semantic validation against workstream ownership,
   integration-owned paths, required context, worktree, branch, and revision.
+- Independent final review found no high or medium defects.
+
+## Promotion State
+
+The organization branch is committed and review-ready. It has not been merged
+to `main`, pushed to a remote, or applied to the live vault.
 
 ## Write Ownership
 
