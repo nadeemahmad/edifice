@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "assignment_id",
+    "workstream",
+    "mode",
+    "learning_level",
+    "base_revision",
+    "branch",
+    "worktree",
+    "objective",
+    "context_paths",
+    "writable_paths",
+    "required_checks",
+    "prohibited_effects",
+    "completion_criteria"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "assignment_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "workstream": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "mode": {
+      "enum": [
+        "research",
+        "experiment",
+        "design",
+        "implementation",
+        "verification",
+        "review"
+      ]
+    },
+    "learning_level": {
+      "enum": [
+        "brief",
+        "understand",
+        "practice"
+      ]
+    },
+    "base_revision": {
+      "type": "string",
+      "minLength": 7
+    },
+    "branch": {
+      "type": "string",
+      "pattern": "^nahmad/.+-codex$"
+    },
+    "worktree": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_paths": {
+      "$ref": "#/$defs/string_list"
+    },
+    "writable_paths": {
+      "$ref": "#/$defs/string_list"
+    },
+    "required_checks": {
+      "$ref": "#/$defs/string_list"
+    },
+    "prohibited_effects": {
+      "$ref": "#/$defs/string_list"
+    },
+    "completion_criteria": {
+      "$ref": "#/$defs/string_list"
+    }
+  },
+  "$defs": {
+    "string_list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

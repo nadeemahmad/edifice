@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "assignment_id": "meeting-notes-follow-up",
+  "workstream": "meeting-notes",
+  "mode": "implementation",
+  "learning_level": "brief",
+  "base_revision": "e8bc130",
+  "branch": "nahmad/edifice-meeting-notes-codex",
+  "worktree": "/Users/nahmad/Developer/worktrees/edifice-meeting-notes",
+  "objective": "Implement one accepted meeting-note behavior without changing shared command registration or live vault state.",
+  "context_paths": [
+    "AGENTS.md",
+    "docs/agent-context.md",
+    "docs/engineering/owner-practices.md",
+    "docs/workstreams/meeting-notes.md"
+  ],
+  "writable_paths": [
+    "docs/workstreams/meeting-notes.md",
+    "src/edifice/meeting_note.py",
+    "tests/test_meeting_cli.py",
+    "vault-template/20-work/notes/AGENTS.md"
+  ],
+  "required_checks": [
+    ".venv/bin/python -m pytest -p no:cacheprovider tests/test_meeting_cli.py",
+    ".venv/bin/ruff check --no-cache src/edifice/meeting_note.py tests/test_meeting_cli.py",
+    ".venv/bin/ruff format --check --no-cache src/edifice/meeting_note.py tests/test_meeting_cli.py",
+    "git diff --check"
+  ],
+  "prohibited_effects": [
+    "Do not edit integration-owned files.",
+    "Do not mutate the live vault.",
+    "Do not install software or authenticate.",
+    "Do not create or update a pull request."
+  ],
+  "completion_criteria": [
+    "The accepted behavior is implemented through its tested interface.",
+    "Focused checks pass.",
+    "The final diff contains only writable paths.",
+    "The closeout identifies any shared integration request."
+  ]
+}

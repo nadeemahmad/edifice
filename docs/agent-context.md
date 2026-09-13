@@ -100,3 +100,7 @@ Return:
 - next action.
 
 Do not mark a workstream complete merely because one agent turn ended.
+
+Concurrent assignments follow
+`docs/engineering/parallel-agent-protocol.md` and return the structured
+closeout in `docs/engineering/agent-closeout-template.md`.

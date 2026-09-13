@@ -37,6 +37,8 @@ Fail closed when identity, policy, ownership, or approval is unclear.
 - Do not edit another active workstream's owned files.
 - Use separate Git worktrees for concurrent write tasks.
 - Branches created by Codex use `nahmad/` and end in `-codex`.
+- Follow `docs/engineering/parallel-agent-protocol.md` and the supplied
+  assignment envelope for concurrent work.
 
 ## Git Safety
 

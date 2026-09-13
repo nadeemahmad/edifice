@@ -12,6 +12,12 @@ VAULT_OWNER_PRACTICES_PATH = (
     / "engineering"
     / "owner-practices.md"
 )
+ASSIGNMENT_PATH = (
+    REPOSITORY_ROOT / "docs" / "engineering" / "agent-assignment.example.json"
+)
+ASSIGNMENT_SCHEMA_PATH = (
+    REPOSITORY_ROOT / "docs" / "engineering" / "agent-assignment.schema.json"
+)
 ALLOWED_STATUSES = {"planned", "designed", "active", "uncommitted", "committed"}
 ALLOWED_MODES = {
     "research",
@@ -51,3 +57,24 @@ def test_workstream_registry_references_valid_unique_repository_context() -> Non
 
 def test_vault_template_uses_canonical_owner_engineering_practices() -> None:
     assert OWNER_PRACTICES_PATH.read_bytes() == VAULT_OWNER_PRACTICES_PATH.read_bytes()
+
+
+def test_agent_assignment_limits_feature_agent_to_registered_owned_paths() -> None:
+    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    assignment = json.loads(ASSIGNMENT_PATH.read_text(encoding="utf-8"))
+    schema = json.loads(ASSIGNMENT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    workstreams = {
+        workstream["id"]: workstream for workstream in registry["workstreams"]
+    }
+
+    assert assignment["schema_version"] == 1
+    assert schema["properties"]["schema_version"]["const"] == 1
+    assert assignment["workstream"] in workstreams
+    assert assignment["branch"].startswith("nahmad/")
+    assert assignment["branch"].endswith("-codex")
+    assert set(assignment["writable_paths"]).issubset(
+        workstreams[assignment["workstream"]]["owned_paths"]
+    )
+    assert not set(assignment["writable_paths"]).intersection(
+        registry["integration_owned_paths"]
+    )
