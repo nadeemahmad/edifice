@@ -135,7 +135,8 @@ instruction sources. Repeating the command returns the recorded task.
 If Codex creates a task that fails project or worktree verification, or creates
 a thread but cannot start its opening turn, Edifice records
 `launch-needs-review` with the available task identity before returning an
-error.
+error. Failures known to occur before thread creation record
+`launch-retryable` and may be retried after the local cause is corrected.
 
 ## Meeting notes
 

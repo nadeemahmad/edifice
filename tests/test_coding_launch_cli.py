@@ -1,6 +1,7 @@
 import io
 import json
 import subprocess
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -328,6 +329,73 @@ def test_code_launch_records_intent_before_contacting_codex(
     assert result.exit_code == 0
 
 
+def test_code_launch_records_thread_identity_during_app_launch(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "launch-example"
+        / "coding-run.json"
+    )
+    partial_task = CodexTask(
+        thread_id="thread-immediate",
+        turn_id=None,
+        project_id=None,
+        cwd=None,
+        instruction_sources=(),
+    )
+
+    def launch_and_report_thread(**arguments: object) -> object:
+        callback = arguments["on_thread_started"]
+        assert callable(callback)
+        callback(partial_task)
+        coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+        assignment_state = coding_run["assignment"]
+        assert assignment_state["status"] == "launching"
+        assert assignment_state["thread_id"] == "thread-immediate"
+        raise CodexTaskStartedError(
+            "Opening turn failed.",
+            partial_task,
+        )
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.launch_with_codex_app",
+        launch_and_report_thread,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code != 0
+    assert "Recorded task thread-immediate for recovery." in result.output
+
+
 class _RecordingInput(io.StringIO):
     def close(self) -> None:
         self.flush()
@@ -351,9 +419,25 @@ class _FakeAppServerProcess:
         return 0
 
 
-class _SelectableNoResponse(io.StringIO):
-    def fileno(self) -> int:
-        return 123
+class _StalledOutput(io.StringIO):
+    def readline(self, size: int = -1) -> str:
+        del size
+        time.sleep(1)
+        return ""
+
+
+class _SlowNotificationOutput(io.StringIO):
+    def __init__(self, lines: list[dict[str, object]], delay: float) -> None:
+        super().__init__("")
+        self._lines = [json.dumps(line) + "\n" for line in lines]
+        self._delay = delay
+
+    def readline(self, size: int = -1) -> str:
+        del size
+        time.sleep(self._delay)
+        if not self._lines:
+            return ""
+        return self._lines.pop(0)
 
 
 def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
@@ -364,11 +448,24 @@ def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
     responses: list[dict[str, object]] = [
         {"id": 1, "result": {}},
         {
+            "id": 2,
+            "result": {
+                "data": [
+                    {
+                        "id": "project-edifice",
+                        "name": "Edifice",
+                        "roots": [{"path": str(repository)}],
+                    }
+                ],
+                "nextCursor": None,
+            },
+        },
+        {
             "method": "thread/started",
             "params": {"thread": {"id": "thread-123"}},
         },
         {
-            "id": 2,
+            "id": 3,
             "result": {
                 "cwd": str(repository),
                 "instructionSources": [str(repository / "AGENTS.md")],
@@ -381,9 +478,9 @@ def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
                 },
             },
         },
-        {"id": 3, "result": {}},
+        {"id": 4, "result": {}},
         {
-            "id": 4,
+            "id": 5,
             "result": {
                 "turn": {
                     "id": "turn-456",
@@ -402,7 +499,7 @@ def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
         return process
 
     monkeypatch.setattr(
-        "edifice.coding_launch.subprocess.Popen",
+        "edifice.coding_launch._start_proxy",
         start_process,
     )
 
@@ -422,27 +519,38 @@ def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
             "id": 1,
             "method": "initialize",
             "params": {
+                "capabilities": {
+                    "experimentalApi": True,
+                },
                 "clientInfo": {
                     "name": "edifice",
                     "title": "Edifice",
                     "version": "0.1.0",
-                }
+                },
             },
         },
         {"method": "initialized"},
         {
             "id": 2,
+            "method": "project/list",
+            "params": {
+                "limit": 100,
+            },
+        },
+        {
+            "id": 3,
             "method": "thread/start",
             "params": {
                 "approvalPolicy": "on-request",
                 "cwd": str(repository),
                 "ephemeral": False,
                 "model": "gpt-test",
+                "projectId": "project-edifice",
                 "sandbox": "read-only",
             },
         },
         {
-            "id": 3,
+            "id": 4,
             "method": "thread/name/set",
             "params": {
                 "name": "EDIFICE-200: Launch example",
@@ -450,7 +558,7 @@ def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
             },
         },
         {
-            "id": 4,
+            "id": 5,
             "method": "turn/start",
             "params": {
                 "input": [
@@ -475,7 +583,7 @@ def test_codex_app_launcher_times_out_when_proxy_stalls(
     monkeypatch: MonkeyPatch,
 ) -> None:
     process = _FakeAppServerProcess([])
-    process.stdout = _SelectableNoResponse()
+    process.stdout = _StalledOutput()
 
     def start_process(
         _arguments: list[str],
@@ -484,19 +592,57 @@ def test_codex_app_launcher_times_out_when_proxy_stalls(
         return process
 
     monkeypatch.setattr(
-        "edifice.coding_launch.subprocess.Popen",
+        "edifice.coding_launch._start_proxy",
         start_process,
     )
 
-    def no_ready_streams(
-        *_arguments: object,
+    monkeypatch.setattr(
+        "edifice.coding_launch.RPC_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    with pytest.raises(
+        click.ClickException,
+        match="Codex app-server timed out during initialize",
+    ):
+        launch_with_codex_app(
+            codex_binary="codex-test",
+            title="EDIFICE-200: Launch example",
+            repository=tmp_path / "repository",
+            model="gpt-test",
+            sandbox="read-only",
+            prompt="Bounded assignment prompt.",
+        )
+
+
+def test_codex_app_launcher_notifications_do_not_reset_rpc_deadline(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    process = _FakeAppServerProcess([])
+    process.stdout = _SlowNotificationOutput(
+        [
+            {"method": "one"},
+            {"method": "two"},
+            {"method": "three"},
+            {"id": 1, "result": {}},
+        ],
+        delay=0.01,
+    )
+
+    def start_process(
+        _arguments: list[str],
         **_options: object,
-    ) -> tuple[list[int], list[int], list[int]]:
-        return [], [], []
+    ) -> _FakeAppServerProcess:
+        return process
 
     monkeypatch.setattr(
-        "edifice.coding_launch.select.select",
-        no_ready_streams,
+        "edifice.coding_launch._start_proxy",
+        start_process,
+    )
+    monkeypatch.setattr(
+        "edifice.coding_launch.RPC_TIMEOUT_SECONDS",
+        0.015,
     )
 
     with pytest.raises(
@@ -768,6 +914,18 @@ def test_codex_app_launcher_preserves_thread_when_opening_turn_fails(
         {
             "id": 2,
             "result": {
+                "data": [
+                    {
+                        "id": "project-edifice",
+                        "roots": [{"path": str(repository)}],
+                    }
+                ],
+                "nextCursor": None,
+            },
+        },
+        {
+            "id": 3,
+            "result": {
                 "cwd": str(repository),
                 "instructionSources": [str(repository / "AGENTS.md")],
                 "model": "gpt-test",
@@ -780,7 +938,7 @@ def test_codex_app_launcher_preserves_thread_when_opening_turn_fails(
             },
         },
         {
-            "id": 3,
+            "id": 4,
             "error": {
                 "message": "cannot set thread name",
             },
@@ -795,7 +953,7 @@ def test_codex_app_launcher_preserves_thread_when_opening_turn_fails(
         return process
 
     monkeypatch.setattr(
-        "edifice.coding_launch.subprocess.Popen",
+        "edifice.coding_launch._start_proxy",
         start_process,
     )
 
@@ -826,6 +984,18 @@ def test_codex_app_launcher_preserves_thread_when_project_is_unassigned(
         {
             "id": 2,
             "result": {
+                "data": [
+                    {
+                        "id": "project-edifice",
+                        "roots": [{"path": str(repository)}],
+                    }
+                ],
+                "nextCursor": None,
+            },
+        },
+        {
+            "id": 3,
+            "result": {
                 "cwd": str(repository),
                 "instructionSources": [str(repository / "AGENTS.md")],
                 "model": "gpt-test",
@@ -847,7 +1017,7 @@ def test_codex_app_launcher_preserves_thread_when_project_is_unassigned(
         return process
 
     monkeypatch.setattr(
-        "edifice.coding_launch.subprocess.Popen",
+        "edifice.coding_launch._start_proxy",
         start_process,
     )
 
@@ -877,6 +1047,18 @@ def test_codex_app_launcher_revalidates_repository_before_opening_turn(
         {
             "id": 2,
             "result": {
+                "data": [
+                    {
+                        "id": "project-edifice",
+                        "roots": [{"path": str(repository)}],
+                    }
+                ],
+                "nextCursor": None,
+            },
+        },
+        {
+            "id": 3,
+            "result": {
                 "cwd": str(repository),
                 "instructionSources": [str(repository / "AGENTS.md")],
                 "model": "gpt-test",
@@ -888,7 +1070,7 @@ def test_codex_app_launcher_revalidates_repository_before_opening_turn(
                 },
             },
         },
-        {"id": 3, "result": {}},
+        {"id": 4, "result": {}},
     ]
     process = _FakeAppServerProcess(responses)
 
@@ -902,7 +1084,7 @@ def test_codex_app_launcher_revalidates_repository_before_opening_turn(
         raise click.ClickException("Repository changed during coding launch.")
 
     monkeypatch.setattr(
-        "edifice.coding_launch.subprocess.Popen",
+        "edifice.coding_launch._start_proxy",
         start_process,
     )
 
@@ -944,6 +1126,18 @@ def test_codex_app_launcher_rejects_effective_configuration_mismatch(
         {
             "id": 2,
             "result": {
+                "data": [
+                    {
+                        "id": "project-edifice",
+                        "roots": [{"path": str(repository)}],
+                    }
+                ],
+                "nextCursor": None,
+            },
+        },
+        {
+            "id": 3,
+            "result": {
                 "cwd": str(repository),
                 "instructionSources": [str(repository / "AGENTS.md")],
                 "model": effective_model,
@@ -955,8 +1149,8 @@ def test_codex_app_launcher_rejects_effective_configuration_mismatch(
                 },
             },
         },
-        {"id": 3, "result": {}},
-        {"id": 4, "result": {"turn": {"id": "turn-456"}}},
+        {"id": 4, "result": {}},
+        {"id": 5, "result": {"turn": {"id": "turn-456"}}},
     ]
     process = _FakeAppServerProcess(responses)
 
@@ -967,7 +1161,7 @@ def test_codex_app_launcher_rejects_effective_configuration_mismatch(
         return process
 
     monkeypatch.setattr(
-        "edifice.coding_launch.subprocess.Popen",
+        "edifice.coding_launch._start_proxy",
         start_process,
     )
 
@@ -1122,3 +1316,59 @@ def test_code_launch_records_task_when_repository_changes_during_turn_start(
     assert "Recorded task thread-stale for recovery." in result.output
     assert assignment_state["status"] == "launch-needs-review"
     assert assignment_state["thread_id"] == "thread-stale"
+
+
+def test_code_launch_marks_proxy_start_failure_retryable(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+
+    def fail_to_start_proxy(_arguments: list[str]) -> object:
+        raise OSError("app-server unavailable")
+
+    monkeypatch.setattr(
+        "edifice.coding_launch._start_proxy",
+        fail_to_start_proxy,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+        input="y\n",
+    )
+
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "launch-example"
+        / "coding-run.json"
+    )
+    coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    assignment_state = coding_run["assignment"]
+
+    assert result.exit_code != 0
+    assert "Cannot start Codex app-server proxy" in result.output
+    assert assignment_state["status"] == "launch-retryable"
+    assert assignment_state["thread_id"] is None
+    assert assignment_state["launch_error"].endswith("app-server unavailable")

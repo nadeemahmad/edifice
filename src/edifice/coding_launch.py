@@ -1,11 +1,9 @@
 """Launch governed coding runs into persistent Codex tasks."""
 
 import fcntl
-import io
 import json
 import os
 import re
-import select
 import subprocess
 import tempfile
 from collections.abc import Callable, Generator
@@ -13,7 +11,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import IO, cast
+from queue import Empty, Queue
+from threading import Thread
+from time import monotonic
+from typing import TextIO, cast
 
 import click
 
@@ -55,10 +56,21 @@ class CodexTaskStartedError(click.ClickException):
         self.task = task
 
 
+class CodexLaunchRetryableError(click.ClickException):
+    """Launch failed before a Codex thread could have been created."""
+
+
 @dataclass(frozen=True)
 class CodingLaunchResult:
     thread_id: str
     project_id: str
+
+
+@dataclass
+class _AppServerConnection:
+    process: subprocess.Popen[str]
+    responses: Queue[str | None]
+    stderr_lines: list[str]
 
 
 def prepare_coding_launch(
@@ -83,7 +95,7 @@ def prepare_coding_launch(
         thread_id = _require_string(assignment, "thread_id")
         project_id = _require_string(assignment, "project_id")
         validate_launch = False
-    elif status == "not-launched":
+    elif status in {"not-launched", "launch-retryable"}:
         thread_id = None
         project_id = None
         validate_launch = True
@@ -137,12 +149,17 @@ def launch_coding_run(
             coding_run.get("assignment"),
             "assignment",
         )
-        if assignment_state.get("status") != "not-launched":
+        status = assignment_state.get("status")
+        if status == "launched":
             thread_id = _require_string(assignment_state, "thread_id")
             project_id = _require_string(assignment_state, "project_id")
             return CodingLaunchResult(
                 thread_id=thread_id,
                 project_id=project_id,
+            )
+        if status not in {"not-launched", "launch-retryable"}:
+            raise click.ClickException(
+                f"Coding run launch requires recovery: {preview.slug}"
             )
         assignment = _load_mapping(assignment_path, "agent assignment")
         _validate_launch_assignment(
@@ -160,6 +177,29 @@ def launch_coding_run(
         )
         launching_run["assignment"] = launching_state
         _replace_json_atomically(run_path, launching_run)
+
+        def record_started_thread(task: CodexTask) -> None:
+            thread_run = dict(launching_run)
+            thread_state = dict(launching_state)
+            thread_state.update(
+                {
+                    "thread_id": task.thread_id,
+                    "turn_id": task.turn_id,
+                    "project_id": task.project_id,
+                    "cwd": str(task.cwd) if task.cwd is not None else None,
+                    "instruction_sources": [
+                        str(path) for path in task.instruction_sources
+                    ],
+                }
+            )
+            thread_run["assignment"] = thread_state
+            try:
+                _replace_json_atomically(run_path, thread_run)
+            except OSError as error:
+                raise click.ClickException(
+                    f"Cannot record started Codex task {task.thread_id}: {error}"
+                ) from error
+
         try:
             task = launch_with_codex_app(
                 codex_binary=codex_binary,
@@ -168,6 +208,7 @@ def launch_coding_run(
                 model=preview.model,
                 sandbox=preview.sandbox,
                 prompt=_launch_prompt(assignment),
+                on_thread_started=record_started_thread,
                 before_turn=lambda: _validate_launch_assignment(
                     coding_run=coding_run,
                     assignment=assignment,
@@ -189,6 +230,14 @@ def launch_coding_run(
             raise click.ClickException(
                 f"{error.message} Recorded task {error.task.thread_id} for recovery."
             ) from error
+        except CodexLaunchRetryableError as error:
+            failed_run = dict(launching_run)
+            failed_state = dict(launching_state)
+            failed_state["status"] = "launch-retryable"
+            failed_state["launch_error"] = error.message
+            failed_run["assignment"] = failed_state
+            _replace_json_atomically(run_path, failed_run)
+            raise
         except click.ClickException as error:
             failed_run = dict(launching_run)
             failed_state = dict(launching_state)
@@ -377,49 +426,59 @@ def launch_with_codex_app(
     model: str,
     sandbox: str,
     prompt: str,
+    on_thread_started: Callable[[CodexTask], None] | None = None,
     before_turn: Callable[[], None] | None = None,
 ) -> CodexTask:
     """Launch through the persistent Codex app-server daemon."""
+    project_roots = _repository_project_roots(repository)
     try:
-        process = subprocess.Popen(
-            [codex_binary, "app-server", "proxy"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
+        process = _start_proxy([codex_binary, "app-server", "proxy"])
     except OSError as error:
-        raise click.ClickException(
+        raise CodexLaunchRetryableError(
             f"Cannot start Codex app-server proxy: {error}"
         ) from error
     if process.stdin is None or process.stdout is None or process.stderr is None:
-        process.terminate()
-        raise click.ClickException("Codex app-server proxy has unavailable streams.")
+        _stop_proxy(process)
+        raise CodexLaunchRetryableError(
+            "Codex app-server proxy has unavailable streams."
+        )
+    connection = _start_readers(process)
 
     try:
-        _rpc_request(
-            process,
-            request_id=1,
-            method="initialize",
-            params={
-                "clientInfo": {
-                    "name": "edifice",
-                    "title": "Edifice",
-                    "version": "0.1.0",
-                }
-            },
-        )
-        _write_message(process, {"method": "initialized"})
+        try:
+            _rpc_request(
+                connection,
+                request_id=1,
+                method="initialize",
+                params={
+                    "capabilities": {
+                        "experimentalApi": True,
+                    },
+                    "clientInfo": {
+                        "name": "edifice",
+                        "title": "Edifice",
+                        "version": "0.1.0",
+                    },
+                },
+            )
+            _write_message(connection, {"method": "initialized"})
+            expected_project_id = _resolve_project(
+                connection,
+                repository,
+                project_roots,
+            )
+        except click.ClickException as error:
+            raise CodexLaunchRetryableError(error.message) from error
         thread_result = _rpc_request(
-            process,
-            request_id=2,
+            connection,
+            request_id=3,
             method="thread/start",
             params={
                 "approvalPolicy": "on-request",
                 "cwd": str(repository),
                 "ephemeral": False,
                 "model": model,
+                "projectId": expected_project_id,
                 "sandbox": sandbox,
             },
         )
@@ -433,6 +492,8 @@ def launch_with_codex_app(
             instruction_sources=(),
         )
         try:
+            if on_thread_started is not None:
+                on_thread_started(partial_task)
             project_id = _optional_string(thread.get("projectId"))
             cwd_value = _optional_string(thread.get("cwd"))
             cwd = Path(cwd_value) if cwd_value is not None else None
@@ -471,11 +532,16 @@ def launch_with_codex_app(
                 raise click.ClickException(
                     "Codex did not assign the task to a project."
                 )
+            if project_id != expected_project_id:
+                raise click.ClickException(
+                    "Codex task project mismatch: "
+                    f"expected {expected_project_id}, got {project_id}."
+                )
             if cwd is None:
                 raise click.ClickException("Codex did not return the task worktree.")
             _rpc_request(
-                process,
-                request_id=3,
+                connection,
+                request_id=4,
                 method="thread/name/set",
                 params={
                     "name": title,
@@ -485,8 +551,8 @@ def launch_with_codex_app(
             if before_turn is not None:
                 before_turn()
             turn_result = _rpc_request(
-                process,
-                request_id=4,
+                connection,
+                request_id=5,
                 method="turn/start",
                 params={
                     "input": [{"type": "text", "text": prompt}],
@@ -505,36 +571,110 @@ def launch_with_codex_app(
             instruction_sources=instruction_sources,
         )
     finally:
-        process.stdin.close()
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
+        _stop_proxy(process)
+
+
+def _start_proxy(arguments: list[str]) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        arguments,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+
+def _resolve_project(
+    connection: _AppServerConnection,
+    repository: Path,
+    candidate_roots: set[Path],
+) -> str:
+    result = _rpc_request(
+        connection,
+        request_id=2,
+        method="project/list",
+        params={"limit": 100},
+    )
+    if result.get("nextCursor") is not None:
+        raise click.ClickException(
+            "Codex project list exceeds the supported launch page."
+        )
+    projects_value = result.get("data")
+    if not isinstance(projects_value, list):
+        raise click.ClickException("Codex project list is invalid.")
+    matching_projects: list[str] = []
+    for value in cast(list[object], projects_value):
+        project = _require_mapping(value, "Codex project")
+        project_id = _require_string(project, "id")
+        roots_value = project.get("roots")
+        if not isinstance(roots_value, list):
+            raise click.ClickException("Codex project roots must be a list.")
+        root_paths = {
+            Path(_require_string(_require_mapping(root, "Codex project root"), "path"))
+            .expanduser()
+            .resolve()
+            for root in cast(list[object], roots_value)
+        }
+        if root_paths.intersection(candidate_roots):
+            matching_projects.append(project_id)
+    if not matching_projects:
+        raise click.ClickException(
+            f"No Codex project contains repository: {repository}"
+        )
+    if len(matching_projects) > 1:
+        raise click.ClickException(
+            f"Multiple Codex projects contain repository: {repository}"
+        )
+    return matching_projects[0]
+
+
+def _repository_project_roots(repository: Path) -> set[Path]:
+    roots = {repository.expanduser().resolve()}
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return roots
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            roots.add(Path(line.removeprefix("worktree ")).resolve())
+    return roots
 
 
 def _rpc_request(
-    process: subprocess.Popen[str],
+    connection: _AppServerConnection,
     *,
     request_id: int,
     method: str,
     params: dict[str, object],
 ) -> dict[str, object]:
     _write_message(
-        process,
+        connection,
         {
             "id": request_id,
             "method": method,
             "params": params,
         },
     )
-    assert process.stdout is not None
-    assert process.stderr is not None
+    deadline = monotonic() + RPC_TIMEOUT_SECONDS
     while True:
-        line = _read_response_line(process.stdout, method)
-        if not line:
-            error_output = process.stderr.read().strip()
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise click.ClickException(f"Codex app-server timed out during {method}.")
+        try:
+            line = connection.responses.get(timeout=remaining)
+        except Empty as error:
+            raise click.ClickException(
+                f"Codex app-server timed out during {method}."
+            ) from error
+        if line is None:
+            error_output = " ".join(connection.stderr_lines).strip()
             detail = f": {error_output}" if error_output else ""
             raise click.ClickException(
                 f"Codex app-server proxy closed during {method}{detail}"
@@ -555,29 +695,73 @@ def _rpc_request(
         return _require_mapping(message.get("result"), f"{method} result")
 
 
-def _read_response_line(stream: IO[str], method: str) -> str:
-    try:
-        descriptor = stream.fileno()
-    except (AttributeError, io.UnsupportedOperation):
-        return stream.readline()
-    readable, _, _ = select.select(
-        [descriptor],
-        [],
-        [],
-        RPC_TIMEOUT_SECONDS,
-    )
-    if not readable:
-        raise click.ClickException(f"Codex app-server timed out during {method}.")
-    return stream.readline()
-
-
 def _write_message(
-    process: subprocess.Popen[str],
+    connection: _AppServerConnection,
     message: dict[str, object],
 ) -> None:
-    assert process.stdin is not None
-    process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
-    process.stdin.flush()
+    assert connection.process.stdin is not None
+    connection.process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
+    connection.process.stdin.flush()
+
+
+def _start_readers(process: subprocess.Popen[str]) -> _AppServerConnection:
+    assert process.stdout is not None
+    assert process.stderr is not None
+    responses: Queue[str | None] = Queue()
+    stderr_lines: list[str] = []
+    Thread(
+        target=_read_stdout,
+        args=(process.stdout, responses),
+        daemon=True,
+    ).start()
+    Thread(
+        target=_read_stderr,
+        args=(process.stderr, stderr_lines),
+        daemon=True,
+    ).start()
+    return _AppServerConnection(
+        process=process,
+        responses=responses,
+        stderr_lines=stderr_lines,
+    )
+
+
+def _read_stdout(stream: TextIO, responses: Queue[str | None]) -> None:
+    try:
+        while line := stream.readline():
+            responses.put(line)
+    except (OSError, ValueError):
+        pass
+    finally:
+        responses.put(None)
+
+
+def _read_stderr(stream: TextIO, stderr_lines: list[str]) -> None:
+    try:
+        while line := stream.readline():
+            stderr_lines.append(line.strip())
+    except (OSError, ValueError):
+        pass
+
+
+def _stop_proxy(process: subprocess.Popen[str]) -> None:
+    if process.stdin is not None:
+        try:
+            process.stdin.close()
+        except (OSError, ValueError):
+            pass
+    try:
+        process.terminate()
+    except OSError:
+        pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+            process.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
 
 def _path_tuple(value: object, field: str) -> tuple[Path, ...]:

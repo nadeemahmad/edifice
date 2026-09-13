@@ -295,6 +295,7 @@
           "enum": [
             "not-launched",
             "launching",
+            "launch-retryable",
             "launched",
             "launch-needs-review",
             "complete",
@@ -362,6 +363,7 @@
               "status": {
                 "enum": [
                   "launching",
+                  "launch-retryable",
                   "launched",
                   "launch-needs-review"
                 ]
@@ -378,7 +380,6 @@
               "turn_id",
               "project_id",
               "cwd",
-              "launched_at",
               "instruction_sources"
             ]
           }
@@ -387,7 +388,10 @@
           "if": {
             "properties": {
               "status": {
-                "const": "launch-needs-review"
+                "enum": [
+                  "launch-retryable",
+                  "launch-needs-review"
+                ]
               }
             }
           },
@@ -395,6 +399,38 @@
             "required": [
               "launch_error"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "launched"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "launched_at"
+            ],
+            "properties": {
+              "thread_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "turn_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "project_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "cwd": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
         }
       ]

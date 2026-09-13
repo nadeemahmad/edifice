@@ -219,6 +219,23 @@ effective model or sandbox. Implementation resumed:
 - returned effective model and sandbox must match the preview;
 - dry-run performs the same pre-launch validation as confirmed launch.
 
+Independent review of revision
+`a0a84a1360afb264d89e46a5294a939ea1c795ee` found five remaining launch
+risks: notification-reset RPC timeouts, unverified saved-project identity,
+task identity not persisted early enough, pre-thread failures blocked from
+retry, and a schema error in `launching`. Implementation resumed:
+
+- app-server output is drained by daemon readers and each RPC uses one absolute
+  deadline, independent of notifications or text buffering;
+- the experimental project API resolves one saved project from repository and
+  worktree roots, passes its ID to `thread/start`, and verifies the response;
+- the durable `launching` record receives the thread ID immediately after
+  `thread/start`;
+- failures known to occur before thread creation enter `launch-retryable`;
+- cleanup errors cannot replace the original launch result;
+- schema conditions now distinguish intent, retryable failure, partial
+  recovery, and completed launch.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.

@@ -100,11 +100,11 @@ Tasks remain Markdown checkboxes in the note that owns their context.
   branch and revision, registered writable paths, and hashes for loaded
   repository context.
 - JIRA evidence begins as `pending-verification`.
-- Assignment launch state is `not-launched`, `launching`, `launched`, or
-  `launch-needs-review`. Launch intent records runtime, model, sandbox,
-  worktree, and start time before app-server contact. Completed and recovery
-  records add the available thread, turn, project, launch time, and instruction
-  sources.
+- Assignment launch state is `not-launched`, `launching`, `launch-retryable`,
+  `launched`, or `launch-needs-review`. Launch intent records runtime, model,
+  sandbox, worktree, and start time before app-server contact. Completed and
+  recovery records add the available thread, turn, project, launch time, and
+  instruction sources.
 - Empty design, TDD, verification, review, closeout, and PR-draft evidence
   lists do not prove that a gate has passed.
 - Retrying the same run preserves the original records. Conflicting reuse of a
