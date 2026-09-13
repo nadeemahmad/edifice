@@ -43,12 +43,11 @@ BASE_PROHIBITED_EFFECTS = (
     "Do not mutate JIRA, GitHub, the live vault, or another external system.",
     "Do not install software, authenticate, push, or create a pull request.",
 )
-COMPLETION_CRITERIA = (
+BASE_COMPLETION_CRITERIA = (
     "The accepted design is recorded.",
     "Behavior changes have test-first vertical-slice evidence.",
     "Required checks pass at the exact final revision.",
     "An independent read-only findings-first review is complete.",
-    "A PR description draft uses verified JIRA and design evidence.",
 )
 
 
@@ -81,6 +80,8 @@ def start_coding_run(
     normalized_objective = _normalize_text(objective, "Objective")
     normalized_mode = _validate_choice(mode, "mode", ALLOWED_MODES)
     jira = _jira_state(jira_key)
+    jira_applicable = jira["evidence_status"] != "not-applicable"
+    completion_criteria = _completion_criteria(jira_applicable)
     normalized_learning_level = _validate_choice(
         learning_level,
         "learning level",
@@ -143,6 +144,7 @@ def start_coding_run(
         context_paths=context_paths,
         writable_paths=writable_paths,
         prohibited_effects=prohibited_effects,
+        completion_criteria=completion_criteria,
     )
     try:
         validate_agent_assignment(
@@ -192,13 +194,13 @@ def start_coding_run(
         "writable_paths": writable_paths,
         "required_checks": list(REQUIRED_CHECKS),
         "prohibited_effects": prohibited_effects,
-        "completion_criteria": list(COMPLETION_CRITERIA),
+        "completion_criteria": completion_criteria,
         "gates": {
             "design": "required",
             "tdd": "pending",
             "verification": "pending",
             "review": "pending",
-            "pr_draft": "pending",
+            "pr_draft": "pending" if jira_applicable else "not-applicable",
         },
         "evidence": {
             "design_records": [],
@@ -290,6 +292,7 @@ def _assignment(
     context_paths: list[str],
     writable_paths: list[str],
     prohibited_effects: list[str],
+    completion_criteria: list[str],
 ) -> dict[str, object]:
     return {
         "schema_version": 1,
@@ -306,7 +309,7 @@ def _assignment(
         "writable_paths": writable_paths,
         "required_checks": list(REQUIRED_CHECKS),
         "prohibited_effects": prohibited_effects,
-        "completion_criteria": list(COMPLETION_CRITERIA),
+        "completion_criteria": completion_criteria,
     }
 
 
@@ -317,6 +320,20 @@ def _prohibited_effects(mode: str) -> list[str]:
     else:
         effects.append("Do not modify paths outside the declared writable paths.")
     return effects
+
+
+def _completion_criteria(jira_applicable: bool) -> list[str]:
+    criteria: list[str] = list(BASE_COMPLETION_CRITERIA)
+    if jira_applicable:
+        criteria.append(
+            "A PR description draft uses verified JIRA and design evidence."
+        )
+    else:
+        criteria.append(
+            "If this run will produce a PR, add and verify a relevant JIRA issue "
+            "before drafting; otherwise PR drafting is not applicable."
+        )
+    return criteria
 
 
 def _context_manifest(

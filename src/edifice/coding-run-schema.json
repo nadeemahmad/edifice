@@ -121,6 +121,12 @@
             "properties": {
               "key": {
                 "const": null
+              },
+              "title": {
+                "const": null
+              },
+              "url": {
+                "const": null
               }
             }
           },

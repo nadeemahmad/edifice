@@ -15,8 +15,8 @@ reviewable closeout without unauthorized external mutation.
 ## Current State
 
 - Decisions D-207 through D-219 define the intended workflow.
-- The owner accepted a manual Phase A walking skeleton for one real repository
-  and verified JIRA issue.
+- The owner accepted a manual Phase A walking skeleton for one real repository,
+  using a verified JIRA issue when one applies.
 - The owner accepted the `edifice code start` interface and local coding-run
   storage on 2026-09-13.
 - `edifice code start` creates a durable coding-run record and validated active
@@ -66,7 +66,8 @@ reviewable closeout without unauthorized external mutation.
 - Repository-level `AGENTS.md`.
 - Workstream registry and context manifest.
 - Existing context gatherer.
-- One selected real JIRA issue and repository for the pilot.
+- One selected real repository and, when applicable, a verified JIRA issue for
+  the pilot.
 
 ## Verification
 
@@ -291,6 +292,13 @@ JIRA-optional implementation evidence:
 - Green: every mode may omit JIRA or use `not-applicable`; supplied issue keys
   retain validation and pending-verification state.
 - JIRA-free launch titles use the run name without a placeholder prefix.
+
+Independent review of revision
+`26030951c6ea4052e251768c2f4124cda6e1962b` found that JIRA-free runs still
+received an unconditional PR-draft criterion. Completion criteria and the PR
+gate are now conditional: local or no-PR work marks drafting not applicable,
+while any run that will produce a PR must add and verify a relevant JIRA issue
+before drafting. The human-owned PR-link policy remains unchanged.
 
 ## Known Gaps
 

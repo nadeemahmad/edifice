@@ -261,6 +261,9 @@ def test_code_start_verification_mode_allows_jira_not_applicable(
         / "coding-run.json"
     )
     coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    assignment = json.loads(
+        run_path.with_name("agent-assignment.preview.json").read_text(encoding="utf-8")
+    )
     assert result.exit_code == 0
     assert coding_run["jira"] == {
         "key": None,
@@ -268,6 +271,13 @@ def test_code_start_verification_mode_allows_jira_not_applicable(
         "url": None,
         "evidence_status": "not-applicable",
     }
+    assert coding_run["gates"]["pr_draft"] == "not-applicable"
+    conditional_criterion = (
+        "If this run will produce a PR, add and verify a relevant JIRA issue "
+        "before drafting; otherwise PR drafting is not applicable."
+    )
+    assert conditional_criterion in coding_run["completion_criteria"]
+    assert conditional_criterion in assignment["completion_criteria"]
 
 
 def test_code_start_implementation_mode_allows_omitted_jira(
