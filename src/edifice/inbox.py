@@ -237,6 +237,23 @@ def route_capture(
                 raise click.ClickException(
                     f"Capture changed after routing review: {capture_id}"
                 )
+            recorded_route = record.get("suggested_route")
+            if (
+                record.get("status") in {"routing", "routing-failed"}
+                and recorded_route in ROUTES
+            ):
+                if recorded_route != route:
+                    raise click.ClickException(
+                        f"Capture has incomplete route {recorded_route}."
+                    )
+                if (
+                    route == "work-idea"
+                    and record.get("classification") != normalized_classification
+                ):
+                    raise click.ClickException(
+                        "Capture has incomplete work-idea classification "
+                        f"{record.get('classification')}."
+                    )
             if record.get("status") == "routed":
                 destination = record.get("destination")
                 route_id = record.get("route_id")
@@ -255,6 +272,14 @@ def route_capture(
                         raise click.ClickException(
                             "Capture already completed through route "
                             f"{completed_route}."
+                        )
+                    if (
+                        route == "work-idea"
+                        and record.get("classification") != normalized_classification
+                    ):
+                        raise click.ClickException(
+                            "Capture already completed with classification "
+                            f"{record.get('classification')}."
                         )
                     return InboxRouteResult(
                         capture_id=capture_id,

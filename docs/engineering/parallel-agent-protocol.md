@@ -52,7 +52,10 @@ Validate every active assignment against the actual checkout before dispatch:
 ```
 
 Dispatch stops when the workstream, context, writable paths, branch, or
-revision does not match the registry and checkout.
+revision does not match the registry and checkout. The declared worktree must
+resolve to the repository being validated, and the assignment must include the
+root instructions, agent context, owner practices, and selected workstream
+record.
 
 ## Worktree And Branch
 

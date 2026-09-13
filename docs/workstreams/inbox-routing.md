@@ -22,6 +22,8 @@ without losing their original wording.
 - Classification is accepted only for work ideas and cannot cross into a
   personal destination.
 - Completed captures permit only an idempotent retry of the same route.
+- Interrupted captures must retry the recorded route and classification before
+  another disposition can be selected.
 
 ## Owned Files
 

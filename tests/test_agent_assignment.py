@@ -22,6 +22,7 @@ def _active_assignment() -> dict[str, object]:
     )
     assignment["assignment_kind"] = "active"
     assignment["base_revision"] = "a" * 40
+    assignment["worktree"] = str(REPOSITORY_ROOT)
     return assignment
 
 
@@ -50,6 +51,36 @@ def test_agent_assignment_rejects_integration_owned_write() -> None:
     with pytest.raises(
         AssignmentValidationError,
         match="Writable path is integration-owned: README.md",
+    ):
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=_registry(),
+            repository_root=REPOSITORY_ROOT,
+        )
+
+
+def test_agent_assignment_rejects_different_worktree() -> None:
+    assignment = _active_assignment()
+    assignment["worktree"] = "/tmp/different-edifice-worktree"
+
+    with pytest.raises(
+        AssignmentValidationError,
+        match="Assignment worktree does not match repository",
+    ):
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=_registry(),
+            repository_root=REPOSITORY_ROOT,
+        )
+
+
+def test_agent_assignment_requires_repository_and_workstream_context() -> None:
+    assignment = _active_assignment()
+    assignment["context_paths"] = []
+
+    with pytest.raises(
+        AssignmentValidationError,
+        match="Assignment is missing required context",
     ):
         validate_agent_assignment(
             assignment=assignment,

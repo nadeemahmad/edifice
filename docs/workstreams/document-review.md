@@ -23,6 +23,7 @@ mutation.
   identity before publication.
 - Review creation rolls back partial files, and PDF metadata is validated
   before ingestion.
+- New-source capacity is checked before PDF ingestion.
 - Existing PDF links can be upgraded to governed local copies without creating
   duplicate manifest entries.
 

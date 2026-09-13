@@ -21,6 +21,7 @@ from edifice.adobe_import import (
 )
 from edifice.document_review import (
     add_review_document,
+    ensure_review_document_capacity,
     find_review_document,
     gather_review,
     get_review_status,
@@ -753,6 +754,11 @@ def add_document_review_command(
             click.echo(f"{verb}: {source_url}.")
             click.echo(f"Context: {review.context_note.relative_to(paths.vault_root)}.")
             return
+        ensure_review_document_capacity(
+            vault_root=paths.vault_root,
+            slug=slug,
+            source_url=source_url,
+        )
         manifest = load_review_manifest(review_paths(paths.vault_root, slug).manifest)
         result = add_pdf(
             vault_root=paths.vault_root,

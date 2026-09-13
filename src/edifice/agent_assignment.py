@@ -108,8 +108,13 @@ def validate_agent_assignment(
         raise AssignmentValidationError("Active assignment has an invalid revision.")
     if not re.fullmatch(r"nahmad/.+-codex", branch):
         raise AssignmentValidationError("Active assignment has an invalid branch.")
-    if not Path(worktree).is_absolute():
+    assignment_worktree = Path(worktree)
+    if not assignment_worktree.is_absolute():
         raise AssignmentValidationError("Active assignment worktree must be absolute.")
+    if assignment_worktree.resolve() != repository_root.resolve():
+        raise AssignmentValidationError(
+            f"Assignment worktree does not match repository: {assignment_worktree}"
+        )
     if expected_branch is not None and branch != expected_branch:
         raise AssignmentValidationError(
             f"Assignment branch mismatch: expected {expected_branch}, got {branch}"
@@ -153,6 +158,18 @@ def validate_agent_assignment(
         "completion_criteria",
     ):
         _require_string_list(typed_assignment, field)
+
+    required_context = {
+        "AGENTS.md",
+        "docs/agent-context.md",
+        "docs/engineering/owner-practices.md",
+        _require_string(workstream, "context"),
+    }
+    missing_context = sorted(required_context - set(context_paths))
+    if missing_context:
+        raise AssignmentValidationError(
+            "Assignment is missing required context: " + ", ".join(missing_context)
+        )
 
     for path in context_paths:
         _validate_repository_path(path)

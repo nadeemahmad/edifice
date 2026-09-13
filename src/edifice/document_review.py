@@ -223,6 +223,25 @@ def find_review_document(
     )
 
 
+def ensure_review_document_capacity(
+    *,
+    vault_root: Path,
+    slug: str,
+    source_url: str,
+) -> None:
+    """Reject a new source before dependent writes when the review is full."""
+    paths = review_paths(vault_root, _validate_slug(slug))
+    manifest = load_review_manifest(paths.manifest)
+    url, _ = normalize_review_source(source_url)
+    documents = cast(list[dict[str, object]], manifest["documents"])
+    if any(document["source_url"] == url for document in documents):
+        return
+    if len(documents) >= MAX_DOCUMENTS:
+        raise click.ClickException(
+            f"Document reviews support at most {MAX_DOCUMENTS} documents."
+        )
+
+
 def normalize_review_source(value: str) -> tuple[str, str | None]:
     """Normalize a raw or Markdown-formatted document link."""
     normalized = value.strip()

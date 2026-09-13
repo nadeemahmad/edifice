@@ -62,7 +62,7 @@ Resolved during this workstream:
 - The fresh-agent orientation exercise passed.
 - Every changed branch path must have registered ownership.
 - Active assignments receive semantic validation against workstream ownership,
-  integration-owned paths, context availability, branch, and revision.
+  integration-owned paths, required context, worktree, branch, and revision.
 
 ## Write Ownership
 

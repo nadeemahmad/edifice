@@ -567,6 +567,67 @@ def test_review_docs_add_validates_owner_context_before_copying_pdf(
     assert not list((vault_root / "20-work" / "references" / "pdfs").rglob("*.pdf"))
 
 
+def test_review_docs_add_checks_capacity_before_copying_pdf(
+    tmp_path: Path,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "start",
+                "--name",
+                "Architecture review",
+                "--classification",
+                "netflix-internal",
+                "--review-on",
+                "2026-09-15",
+            ],
+        ).exit_code
+        == 0
+    )
+    for index in range(20):
+        assert (
+            runner.invoke(
+                cli,
+                [
+                    *_base_arguments(vault_root, audit_root),
+                    "review-docs",
+                    "add",
+                    "architecture-review",
+                    "--link",
+                    f"https://example.netflix.net/design-{index}",
+                ],
+            ).exit_code
+            == 0
+        )
+    source_pdf = tmp_path / "Overflow.pdf"
+    source_pdf.write_bytes(b"%PDF-1.7\noverflow fixture\n%%EOF\n")
+
+    added = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "review-docs",
+            "add",
+            "architecture-review",
+            "--copy-pdf",
+            str(source_pdf),
+            "https://example.netflix.net/overflow.pdf",
+            "--accept-pdf-name",
+        ],
+    )
+
+    assert added.exit_code != 0
+    assert "Document reviews support at most 20 documents." in added.output
+    assert not (vault_root / "20-work" / "references" / "pdf-catalog.json").exists()
+    assert not list((vault_root / "20-work" / "references" / "pdfs").rglob("*.pdf"))
+
+
 def test_review_docs_duplicate_pdf_url_does_not_copy_another_pdf(
     tmp_path: Path,
 ) -> None:
