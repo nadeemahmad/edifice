@@ -904,3 +904,99 @@ def test_code_start_rolls_back_when_final_repository_snapshot_has_new_revision(
     assert result.exit_code != 0
     assert "Repository changed while preparing coding run." in result.output
     assert not run_path.exists()
+
+
+def test_code_start_requires_committed_instruction_hidden_from_worktree(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    _run_git(repository, "update-index", "--assume-unchanged", "src/AGENTS.md")
+    (repository / "src" / "AGENTS.md").unlink()
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Hidden instruction",
+            "--objective",
+            "Require committed repository instructions.",
+            "--jira",
+            "EDIFICE-137",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Required repository context is missing: src/AGENTS.md" in result.output
+    assert not vault_root.exists()
+
+
+def test_code_start_directory_scope_loads_its_own_instruction(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository, owned_paths=["src"])
+    monkeypatch.setattr(
+        "edifice.coding_run._now",
+        lambda: datetime(2026, 9, 13, 16, 30, tzinfo=UTC),
+    )
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Directory scope",
+            "--objective",
+            "Load instructions within a writable directory.",
+            "--jira",
+            "EDIFICE-138",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "implementation",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "directory-scope"
+        / "coding-run.json"
+    )
+    coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    context_paths = {entry["path"] for entry in coding_run["context_manifest"]}
+    assert result.exit_code == 0
+    assert "src/AGENTS.md" in context_paths

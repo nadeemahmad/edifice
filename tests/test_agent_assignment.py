@@ -21,7 +21,13 @@ def _active_assignment() -> dict[str, object]:
         ).read_text(encoding="utf-8")
     )
     assignment["assignment_kind"] = "active"
-    assignment["base_revision"] = "a" * 40
+    assignment["base_revision"] = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     assignment["worktree"] = str(REPOSITORY_ROOT)
     return assignment
 
@@ -205,32 +211,22 @@ def test_agent_assignment_command_validates_feature_checkout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assignment = _active_assignment()
+    revision = assignment["base_revision"]
+    assert isinstance(revision, str)
     assignment["branch"] = "nahmad/meeting-notes-codex"
-    assignment["base_revision"] = "a" * 40
     assignment_path = tmp_path / "assignment.json"
     assignment_path.write_text(json.dumps(assignment), encoding="utf-8")
 
     def clean_repository_state(_repository_root: Path) -> tuple[str, str, bool]:
         return (
             "nahmad/meeting-notes-codex",
-            "a" * 40,
+            revision,
             True,
         )
 
     monkeypatch.setattr(
         "edifice.agent_assignment._repository_state",
         clean_repository_state,
-    )
-
-    def load_registry(
-        _repository_root: Path,
-        _revision: str,
-    ) -> object:
-        return _registry()
-
-    monkeypatch.setattr(
-        "edifice.agent_assignment._load_registry_at_revision",
-        load_registry,
     )
 
     exit_code = main(
@@ -494,3 +490,93 @@ def test_agent_assignment_command_uses_committed_registry_bytes(
 
     assert exit_code == 0
     assert "Valid active assignment: example" in capsys.readouterr().out
+
+
+def test_agent_assignment_requires_committed_instruction_hidden_from_worktree(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    context_paths = [
+        "AGENTS.md",
+        "docs/agent-context.md",
+        "docs/engineering/owner-practices.md",
+        "docs/workstreams/example.md",
+    ]
+    for relative_path in [*context_paths, "src/AGENTS.md", "src/example.py"]:
+        path = repository / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Content\n", encoding="utf-8")
+    registry: dict[str, object] = {
+        "schema_version": 1,
+        "integration_owned_paths": [],
+        "workstreams": [
+            {
+                "id": "example",
+                "context": "docs/workstreams/example.md",
+                "owned_paths": ["src/example.py"],
+            }
+        ],
+    }
+    subprocess.run(
+        ["git", "init", "-b", "nahmad/example-codex"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial repository"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "update-index", "--assume-unchanged", "src/AGENTS.md"],
+        cwd=repository,
+        check=True,
+    )
+    (repository / "src" / "AGENTS.md").unlink()
+    assignment = {
+        "schema_version": 1,
+        "assignment_kind": "active",
+        "assignment_id": "hidden-instruction",
+        "workstream": "example",
+        "mode": "implementation",
+        "learning_level": "brief",
+        "base_revision": revision,
+        "branch": "nahmad/example-codex",
+        "worktree": str(repository),
+        "objective": "Require committed instructions.",
+        "context_paths": context_paths,
+        "writable_paths": ["src/example.py"],
+        "required_checks": ["pytest"],
+        "prohibited_effects": ["No external mutation."],
+        "completion_criteria": ["Validation passes."],
+    }
+
+    with pytest.raises(
+        AssignmentValidationError,
+        match="Assignment is missing governing instructions.*src/AGENTS.md",
+    ):
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=registry,
+            repository_root=repository,
+        )

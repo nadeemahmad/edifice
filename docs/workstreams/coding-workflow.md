@@ -35,6 +35,7 @@ reviewable closeout without unauthorized external mutation.
 
 ## Owned Files
 
+- `docs/agent-context.md`
 - `docs/engineering/agent-assignment.example.json`
 - `docs/workstreams/coding-workflow.md`
 - `src/edifice/agent_assignment.py`
@@ -146,6 +147,19 @@ Implementation resumed:
   instructions;
 - a regression test proves dispatch reads committed registry bytes even when
   the working-tree file is hidden with `assume-unchanged`.
+
+Independent review of revision
+`e149f9fd2aee92ba37d88882a993c00fd8a8fbfe` found that nested instruction
+discovery still read the working tree and missed directory-owned instructions.
+Implementation resumed:
+
+- governing instructions are discovered from the committed Git tree at the
+  assignment revision;
+- hidden or deleted working-tree instruction files fail required-context
+  validation;
+- directory write scopes load an `AGENTS.md` within the directory;
+- `docs/agent-context.md` ownership moved to `coding-workflow` to match this
+  branch's change attribution.
 
 ## Known Gaps
 

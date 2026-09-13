@@ -126,6 +126,7 @@ def start_coding_run(
     prohibited_effects = _prohibited_effects(normalized_mode)
     context_paths = _context_paths(
         repository_root=repository_root,
+        revision=revision,
         workstream=workstream,
         writable_paths=registered_paths,
     )
@@ -335,6 +336,7 @@ def _context_manifest(
 def _context_paths(
     *,
     repository_root: Path,
+    revision: str,
     workstream: dict[str, object],
     writable_paths: list[str],
 ) -> list[str]:
@@ -345,7 +347,15 @@ def _context_paths(
         _require_string(workstream, "context"),
     }
     context_paths = set(required)
-    context_paths.update(governing_instruction_paths(repository_root, writable_paths))
+    try:
+        instruction_paths = governing_instruction_paths(
+            repository_root,
+            revision,
+            writable_paths,
+        )
+    except AssignmentValidationError as error:
+        raise click.ClickException(str(error)) from error
+    context_paths.update(instruction_paths)
     ordered_paths = sorted(context_paths)
     for path in ordered_paths:
         _require_contained_path(

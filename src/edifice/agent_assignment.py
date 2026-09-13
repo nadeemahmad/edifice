@@ -203,7 +203,11 @@ def validate_agent_assignment(
         _require_string(workstream, "context"),
     }
     required_context.update(
-        governing_instruction_paths(repository_root, writable_paths)
+        governing_instruction_paths(
+            repository_root,
+            base_revision,
+            writable_paths,
+        )
     )
     missing_context = sorted(required_context - set(context_paths))
     if missing_context:
@@ -227,15 +231,29 @@ def validate_agent_assignment(
 
 def governing_instruction_paths(
     repository_root: Path,
+    revision: str,
     writable_paths: list[str],
 ) -> list[str]:
     """Return nested instruction files governing the declared write scope."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", "--full-tree", revision],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise AssignmentValidationError(
+            f"Cannot inspect repository instructions at revision {revision}."
+        ) from error
+    committed_paths = set(result.stdout.splitlines())
     instruction_paths: set[str] = set()
     for writable_path in writable_paths:
         path = Path(writable_path)
-        for parent in [Path(), *path.parent.parents[::-1], path.parent]:
-            instruction_path = parent / "AGENTS.md"
-            if (repository_root / instruction_path).is_file():
+        for candidate_root in [*path.parents[::-1], path]:
+            instruction_path = candidate_root / "AGENTS.md"
+            if instruction_path.as_posix() in committed_paths:
                 instruction_paths.add(instruction_path.as_posix())
     return sorted(instruction_paths)
 
