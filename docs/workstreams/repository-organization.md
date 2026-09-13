@@ -13,11 +13,14 @@ work on separate Edifice workstreams without relying on conversation history.
 
 ## Current State
 
-- The source repository has no root `AGENTS.md`.
-- Vault-template instructions govern generated vault content, not source work.
-- Several uncommitted workstreams overlap in `src/edifice/cli.py`, `README.md`,
-  and the system guides.
+- The source repository has a root `AGENTS.md`.
+- Vault-template and source-repository instructions have distinct scopes.
+- Feature work is separated into four checkpoint commits and one shared
+  integration commit.
+- The registry assigns shared files to one integration owner.
 - A verified recovery snapshot exists outside the repository.
+- A fresh read-only agent reconstructed its assignment, authority, branch,
+  revision, and safety constraints without conversation history.
 
 ## Proposed Owned Files
 
@@ -46,14 +49,17 @@ work on separate Edifice workstreams without relying on conversation history.
 
 ## Known Gaps
 
-- No machine-readable workstream registry exists.
-- Existing dirty work has not been separated into intentional commits.
+- Complete repository verification and independent final review remain.
+- The first real concurrent feature assignment has not yet exercised the
+  worktree protocol.
 
 Resolved during this workstream:
 
 - A machine-readable workstream registry now exists.
 - Shared files have one documented integration owner.
 - CLI command modularization has an explicit design and evidence trigger.
+- Existing dirty work is separated into intentional commits.
+- The fresh-agent orientation exercise passed.
 
 ## Write Ownership
 

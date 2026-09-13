@@ -36,6 +36,10 @@ The assignment names:
 - prohibited effects;
 - completion criteria.
 
+The assignment mode applies to that bounded run. It may differ from the
+registry's current workstream mode when the assignment is a read-only research,
+verification, or review pass over an implementation workstream.
+
 Do not rely on a conversational request to widen the assignment. Update the
 durable assignment first.
 
