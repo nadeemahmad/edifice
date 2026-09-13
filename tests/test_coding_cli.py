@@ -1,6 +1,9 @@
 import hashlib
 import json
+import os
 import subprocess
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -38,6 +41,7 @@ def _create_repository(
     *,
     owned_paths: list[str] | None = None,
     source_symlink: str | None = None,
+    include_registry: bool = True,
 ) -> dict[str, object]:
     files = {
         "AGENTS.md": "# Repository instructions\n",
@@ -74,7 +78,8 @@ def _create_repository(
         ],
     }
     registry_path = repository / "docs" / "workstreams" / "registry.json"
-    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+    if include_registry:
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
 
     _run_git(repository, "init", "-b", "nahmad/example-codex")
     _run_git(repository, "config", "user.email", "test@example.com")
@@ -647,4 +652,148 @@ def test_code_start_rejects_repository_change_during_context_preparation(
 
     assert result.exit_code != 0
     assert "Repository changed while preparing coding run." in result.output
+    assert not vault_root.exists()
+
+
+def test_code_start_rechecks_repository_after_acquiring_run_lock(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+
+    @contextmanager
+    def mutating_lock(_audit_root: Path) -> Generator[None]:
+        (repository / "AGENTS.md").write_text(
+            "# Changed while acquiring the lock\n",
+            encoding="utf-8",
+        )
+        yield
+
+    monkeypatch.setattr("edifice.coding_run._coding_run_lock", mutating_lock)
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Lock race",
+            "--objective",
+            "Reject changes during lock acquisition.",
+            "--jira",
+            "EDIFICE-132",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    run_path = vault_root / "20-work" / "operations" / "coding-runs" / "lock-race"
+    assert result.exit_code != 0
+    assert "Repository changed while preparing coding run." in result.output
+    assert not run_path.exists()
+
+
+def test_code_start_rolls_back_run_when_repository_changes_during_publication(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    original_rename = os.rename
+
+    def mutate_after_rename(source: Path, destination: Path) -> None:
+        original_rename(source, destination)
+        (repository / "AGENTS.md").write_text(
+            "# Changed during publication\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("edifice.coding_run.os.rename", mutate_after_rename)
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Publication race",
+            "--objective",
+            "Roll back a stale published assignment.",
+            "--jira",
+            "EDIFICE-133",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    run_path = (
+        vault_root / "20-work" / "operations" / "coding-runs" / "publication-race"
+    )
+    assert result.exit_code != 0
+    assert "Repository changed while preparing coding run." in result.output
+    assert not run_path.exists()
+
+
+def test_code_start_reports_missing_workstream_registry(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository, include_registry=False)
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Missing registry",
+            "--objective",
+            "Report unavailable repository context.",
+            "--jira",
+            "EDIFICE-134",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Workstream registry is unavailable at revision" in result.output
     assert not vault_root.exists()

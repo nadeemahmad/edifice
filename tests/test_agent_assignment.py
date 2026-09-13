@@ -104,6 +104,72 @@ def test_agent_assignment_rejects_abbreviated_revision() -> None:
         )
 
 
+def test_agent_assignment_rejects_writable_path_resolving_outside_repository(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    outside = tmp_path / "outside"
+    repository.mkdir()
+    outside.mkdir()
+    (outside / "example.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (repository / "src").symlink_to("../outside", target_is_directory=True)
+    context_paths = [
+        "AGENTS.md",
+        "docs/agent-context.md",
+        "docs/engineering/owner-practices.md",
+        "docs/workstreams/example.md",
+    ]
+    for relative_path in context_paths:
+        path = repository / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Context\n", encoding="utf-8")
+    assignment = _active_assignment()
+    assignment.update(
+        {
+            "workstream": "example",
+            "worktree": str(repository),
+            "context_paths": context_paths,
+            "writable_paths": ["src/example.py"],
+        }
+    )
+    registry = {
+        "schema_version": 1,
+        "integration_owned_paths": [],
+        "workstreams": [
+            {
+                "id": "example",
+                "context": "docs/workstreams/example.md",
+                "owned_paths": ["src/example.py"],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        AssignmentValidationError,
+        match="Writable path resolves outside repository: src/example.py",
+    ):
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=registry,
+            repository_root=repository,
+        )
+
+
+def test_agent_assignment_rejects_write_scope_for_read_only_mode() -> None:
+    assignment = _active_assignment()
+    assignment["mode"] = "review"
+
+    with pytest.raises(
+        AssignmentValidationError,
+        match="Read-only assignment mode cannot declare writable paths: review",
+    ):
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=_registry(),
+            repository_root=REPOSITORY_ROOT,
+        )
+
+
 def test_agent_assignment_command_validates_feature_checkout(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

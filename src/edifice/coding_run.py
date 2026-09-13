@@ -107,12 +107,18 @@ def start_coding_run(
     if working_tree:
         raise click.ClickException("Repository working tree must be clean.")
 
-    registry = _load_mapping_bytes(
-        _git_bytes(
+    try:
+        registry_content = _git_bytes(
             repository_root,
             "show",
             f"{revision}:docs/workstreams/registry.json",
-        ),
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise click.ClickException(
+            f"Workstream registry is unavailable at revision {revision}."
+        ) from error
+    registry = _load_mapping_bytes(
+        registry_content,
         f"workstream registry at revision {revision}",
     )
     workstream = _find_workstream(registry, workstream_id)
@@ -225,12 +231,32 @@ def start_coding_run(
         revision=revision,
     )
     with _coding_run_lock(audit_root):
+        _require_unchanged_repository(
+            repository_root=repository_root,
+            branch=branch,
+            revision=revision,
+        )
         created = _write_run_directory(
             vault_root=vault_root,
             run_relative_path=run_relative_path,
             coding_run=coding_run,
             assignment=assignment,
         )
+        try:
+            _require_unchanged_repository(
+                repository_root=repository_root,
+                branch=branch,
+                revision=revision,
+            )
+        except click.ClickException:
+            if created:
+                _remove_created_run(
+                    vault_root=vault_root,
+                    run_relative_path=run_relative_path,
+                    coding_run=coding_run,
+                    assignment=assignment,
+                )
+            raise
     return CodingRunResult(
         slug=slug,
         run_path=run_relative_path,
@@ -553,6 +579,33 @@ def _existing_run_matches(
         _stable_run_identity(existing_run) == _stable_run_identity(coding_run)
         and existing_assignment == assignment
     )
+
+
+def _remove_created_run(
+    *,
+    vault_root: Path,
+    run_relative_path: Path,
+    coding_run: dict[str, object],
+    assignment: dict[str, object],
+) -> None:
+    run_directory = vault_root / run_relative_path.parent
+    try:
+        entries = {entry.name for entry in run_directory.iterdir()}
+    except OSError:
+        return
+    if entries != {"coding-run.json", "agent-assignment.preview.json"}:
+        return
+    try:
+        existing_run = _load_mapping(run_directory / "coding-run.json", "coding run")
+        existing_assignment = _load_mapping(
+            run_directory / "agent-assignment.preview.json",
+            "agent assignment",
+        )
+    except click.ClickException:
+        return
+    if existing_run != coding_run or existing_assignment != assignment:
+        return
+    shutil.rmtree(run_directory)
 
 
 def _stable_run_identity(coding_run: dict[str, object]) -> dict[str, object]:

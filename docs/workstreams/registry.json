@@ -135,8 +135,10 @@
       "context": "docs/workstreams/coding-workflow.md",
       "owned_paths": [
         "docs/workstreams/coding-workflow.md",
+        "src/edifice/agent_assignment.py",
         "src/edifice/coding-run-schema.json",
         "src/edifice/coding_run.py",
+        "tests/test_agent_assignment.py",
         "tests/test_coding_cli.py",
         "vault-template/20-work/operations/coding-runs/AGENTS.md"
       ],
@@ -174,8 +176,6 @@
         "docs/workstreams/registry.json",
         "docs/workstreams/registry.schema.json",
         "docs/workstreams/repository-organization.md",
-        "src/edifice/agent_assignment.py",
-        "tests/test_agent_assignment.py",
         "tests/test_repository_context.py"
       ],
       "shared_paths": [],

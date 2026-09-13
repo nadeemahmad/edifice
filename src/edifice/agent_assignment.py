@@ -17,6 +17,7 @@ ALLOWED_MODES = {
     "review",
 }
 ALLOWED_LEARNING_LEVELS = {"brief", "understand", "practice"}
+READ_ONLY_MODES = {"research", "design", "verification", "review"}
 REQUIRED_FIELDS = {
     "schema_version",
     "assignment_kind",
@@ -150,6 +151,10 @@ def validate_agent_assignment(
     )
     context_paths = _require_string_list(typed_assignment, "context_paths")
     writable_paths = _require_string_list(typed_assignment, "writable_paths")
+    if mode in READ_ONLY_MODES and writable_paths:
+        raise AssignmentValidationError(
+            f"Read-only assignment mode cannot declare writable paths: {mode}"
+        )
     for field in (
         "required_checks",
         "prohibited_effects",
@@ -170,13 +175,21 @@ def validate_agent_assignment(
         )
 
     for path in context_paths:
-        _validate_repository_path(path)
+        _validate_repository_path(
+            path,
+            repository_root=repository_root,
+            label="Context path",
+        )
         if not (repository_root / path).is_file():
             raise AssignmentValidationError(
                 f"Assignment context path is unavailable: {path}"
             )
     for path in writable_paths:
-        _validate_repository_path(path)
+        _validate_repository_path(
+            path,
+            repository_root=repository_root,
+            label="Writable path",
+        )
         if path in integration_paths:
             raise AssignmentValidationError(
                 f"Writable path is integration-owned: {path}"
@@ -217,10 +230,21 @@ def _require_string_list(mapping: object, field: str) -> list[str]:
     return typed_items
 
 
-def _validate_repository_path(value: str) -> None:
+def _validate_repository_path(
+    value: str,
+    *,
+    repository_root: Path,
+    label: str,
+) -> None:
     path = Path(value)
     if path.is_absolute() or ".." in path.parts:
         raise AssignmentValidationError(f"Unsafe repository path: {value}")
+    try:
+        (repository_root / path).resolve().relative_to(repository_root)
+    except ValueError as error:
+        raise AssignmentValidationError(
+            f"{label} resolves outside repository: {value}"
+        ) from error
 
 
 def _load_json(path: Path) -> object:

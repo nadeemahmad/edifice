@@ -36,8 +36,10 @@ reviewable closeout without unauthorized external mutation.
 ## Owned Files
 
 - `docs/workstreams/coding-workflow.md`
+- `src/edifice/agent_assignment.py`
 - `src/edifice/coding_run.py`
 - `src/edifice/coding-run-schema.json`
+- `tests/test_agent_assignment.py`
 - `tests/test_coding_cli.py`
 - `vault-template/20-work/operations/coding-runs/AGENTS.md`
 
@@ -97,6 +99,17 @@ containment before context discovery, reads registry and context bytes from the
 recorded Git revision, rechecks repository state before publication, and
 derives assignment permissions from the selected mode. Focused regression
 tests cover each finding.
+
+Independent review of revision
+`d13f4bd489d8c281dca77c6ed0c9696be68ab8aa` found a remaining publication
+race plus two gaps in the shared assignment validator. Implementation resumed
+again:
+
+- repository state is rechecked inside the run lock before and after
+  publication, with narrow rollback of an unchanged just-created run;
+- assignment validation now rejects resolved paths outside the repository;
+- assignment validation now requires empty writable paths for read-only modes;
+- a missing committed workstream registry now produces a controlled CLI error.
 
 ## Known Gaps
 
