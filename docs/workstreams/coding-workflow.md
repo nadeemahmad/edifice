@@ -122,6 +122,17 @@ command accepted dirty worktrees. Implementation resumed:
 - write-mode tests cover both `experiment` and `implementation`;
 - the README names the required `nahmad/<name>-codex` branch form.
 
+Independent review of revision
+`4e20d6ef63c60357c84af3771030e94c1d577340` found a final assignment
+validation race, acceptance of noncanonical registry files, and expired
+idempotent retries. Implementation resumed:
+
+- assignment validation reloads the final repository snapshot before success;
+- the command requires the canonical repository registry path and reads its
+  committed bytes from the assignment revision;
+- identical existing runs remain recoverable after their review date, while
+  new expired runs remain invalid.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.

@@ -53,8 +53,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not working_tree_clean:
             raise AssignmentValidationError("Repository working tree is not clean.")
+        canonical_registry_path = (
+            repository_root / "docs" / "workstreams" / "registry.json"
+        )
+        if arguments.registry.resolve() != canonical_registry_path:
+            raise AssignmentValidationError(
+                "Registry path must be the canonical repository registry."
+            )
         assignment = _load_json(arguments.assignment)
-        registry = _load_json(arguments.registry)
+        registry = _load_registry_at_revision(repository_root, revision)
         validated = validate_agent_assignment(
             assignment=assignment,
             registry=registry,
@@ -62,6 +69,17 @@ def main(argv: list[str] | None = None) -> int:
             expected_branch=branch,
             expected_revision=revision,
         )
+        final_branch, final_revision, final_working_tree_clean = _repository_state(
+            repository_root
+        )
+        if (
+            final_branch != branch
+            or final_revision != revision
+            or not final_working_tree_clean
+        ):
+            raise AssignmentValidationError(
+                "Repository changed during assignment validation."
+            )
     except (AssignmentValidationError, OSError, json.JSONDecodeError) as error:
         print(f"Invalid assignment: {error}", file=sys.stderr)
         return 1
@@ -250,6 +268,26 @@ def _validate_repository_path(
 
 def _load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_registry_at_revision(repository_root: Path, revision: str) -> object:
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{revision}:docs/workstreams/registry.json",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        raise AssignmentValidationError(
+            f"Cannot read canonical registry at revision {revision}."
+        ) from error
 
 
 def _repository_state(repository_root: Path) -> tuple[str, str, bool]:

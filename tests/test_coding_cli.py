@@ -265,6 +265,55 @@ def test_code_start_retry_returns_identical_existing_run(
     assert assignment_path.read_bytes() == before_assignment
 
 
+def test_code_start_retry_returns_existing_run_after_review_date(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    arguments = [
+        *_base_arguments(vault_root, tmp_path / "audit"),
+        "code",
+        "start",
+        "--name",
+        "Expired retry",
+        "--objective",
+        "Recover the existing durable run.",
+        "--jira",
+        "EDIFICE-136",
+        "--repo",
+        str(repository),
+        "--workstream",
+        "example",
+        "--mode",
+        "design",
+        "--learning-level",
+        "brief",
+        "--classification",
+        "netflix-internal",
+        "--review-on",
+        "2026-09-20",
+    ]
+    monkeypatch.setattr(
+        "edifice.coding_run._now",
+        lambda: datetime(2026, 9, 13, 16, 30, tzinfo=UTC),
+    )
+    runner = CliRunner()
+    first = runner.invoke(cli, arguments)
+    monkeypatch.setattr(
+        "edifice.coding_run._now",
+        lambda: datetime(2026, 9, 21, 16, 30, tzinfo=UTC),
+    )
+
+    retry = runner.invoke(cli, arguments)
+
+    assert first.exit_code == 0
+    assert retry.exit_code == 0
+    assert retry.output.startswith("Existing coding run: expired-retry.\n")
+
+
 @pytest.mark.parametrize("mode", ["experiment", "implementation"])
 def test_code_start_write_modes_receive_registered_write_scope(
     tmp_path: Path,

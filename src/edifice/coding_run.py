@@ -93,10 +93,7 @@ def start_coding_run(
         persistence_reason,
         "Persistence reason",
     )
-    if review_on < _now().astimezone().date():
-        raise click.ClickException(
-            f"Review date must be today or later: {review_on.isoformat()}"
-        )
+    created_at = _now()
 
     repository_root = _validate_repository(repository)
     branch, revision, working_tree_clean = _repository_state(repository_root)
@@ -131,7 +128,6 @@ def start_coding_run(
         workstream=workstream,
         writable_paths=registered_paths,
     )
-    created_at = _now()
     assignment = _assignment(
         slug=slug,
         workstream_id=workstream_id,
@@ -234,6 +230,11 @@ def start_coding_run(
             branch=branch,
             revision=revision,
         )
+        run_directory = vault_root / run_relative_path.parent
+        if review_on < created_at.astimezone().date() and not run_directory.exists():
+            raise click.ClickException(
+                f"Review date must be today or later: {review_on.isoformat()}"
+            )
         created = _write_run_directory(
             vault_root=vault_root,
             run_relative_path=run_relative_path,
