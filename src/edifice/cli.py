@@ -22,6 +22,19 @@ from edifice.adobe_import import (
 from edifice.agent_assignment import ALLOWED_LEARNING_LEVELS, ALLOWED_MODES
 from edifice.coding_launch import launch_coding_run, prepare_coding_launch
 from edifice.coding_run import start_coding_run
+from edifice.document_library import (
+    INBOX_PATH as DOCUMENT_INBOX_PATH,
+)
+from edifice.document_library import (
+    READING_STATES,
+    add_document,
+    assign_document,
+    categorize_document,
+    document_library_status,
+    list_documents,
+    mark_document,
+    sync_recent_documents,
+)
 from edifice.document_review import (
     add_review_document,
     ensure_review_document_capacity,
@@ -59,6 +72,7 @@ from edifice.migration import (
     plan_migration,
     verify_migration_package,
 )
+from edifice.nflx_google import create_nflx_google_source
 from edifice.pdf_library import (
     DOCUMENT_KINDS,
     add_pdf,
@@ -1034,6 +1048,195 @@ def auto_assign_task_command(
         f"{task_id} -> {task.project_slug} "
         f"(matching terms: {', '.join(terms)}). {action}"
     )
+
+
+@cli.group("docs")
+def docs_command() -> None:
+    """Maintain the work document reading queue."""
+
+
+@docs_command.command("add")
+@click.argument("source_url")
+@click.option(
+    "--classification",
+    required=True,
+    type=click.Choice(
+        ["public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "--review-on",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.option("--project")
+@click.pass_obj
+def add_document_command(
+    paths: RuntimePaths,
+    source_url: str,
+    classification: str,
+    review_on: datetime,
+    project: str | None,
+) -> None:
+    result = add_document(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        source=create_nflx_google_source(),
+        source_url=source_url,
+        classification=classification,
+        review_on=review_on.date(),
+        persistence_reason="Track this document until its reading decision is complete.",
+        project=project,
+    )
+    click.echo(f"{result.action.title()} document: {result.source_id}.")
+    click.echo(f"Reading inbox: {result.inbox_path}.")
+
+
+@docs_command.command("sync-recent")
+@click.option("--days", default=30, show_default=True, type=int)
+@click.option("--limit", default=50, show_default=True, type=int)
+@click.option(
+    "--classification",
+    required=True,
+    type=click.Choice(
+        ["public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "--review-on",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.option("--project")
+@click.pass_obj
+def sync_recent_document_command(
+    paths: RuntimePaths,
+    days: int,
+    limit: int,
+    classification: str,
+    review_on: datetime,
+    project: str | None,
+) -> None:
+    result = sync_recent_documents(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        source=create_nflx_google_source(),
+        days=days,
+        limit=limit,
+        classification=classification,
+        review_on=review_on.date(),
+        persistence_reason="Track recently viewed documents until reading decisions are complete.",
+        project=project,
+    )
+    click.echo(f"Recently viewed: {result.discovered}.")
+    click.echo(
+        f"Added: {result.added}; refreshed: {result.refreshed}; "
+        f"changed: {result.changed}."
+    )
+    click.echo(f"Reading inbox: {result.inbox_path}.")
+
+
+@docs_command.command("mark")
+@click.argument("document")
+@click.option(
+    "--state",
+    required=True,
+    type=click.Choice(sorted(READING_STATES), case_sensitive=False),
+)
+@click.pass_obj
+def mark_document_command(paths: RuntimePaths, document: str, state: str) -> None:
+    source_id = mark_document(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        document=document,
+        state=state,
+    )
+    click.echo(f"Marked {source_id} as {state.lower()}.")
+
+
+@docs_command.command("categorize")
+@click.argument("document")
+@click.option("--category", required=True)
+@click.pass_obj
+def categorize_document_command(
+    paths: RuntimePaths, document: str, category: str
+) -> None:
+    source_id, normalized = categorize_document(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        document=document,
+        category=category,
+    )
+    click.echo(f"Categorized {source_id} as {normalized}.")
+
+
+@docs_command.command("assign")
+@click.argument("document")
+@click.option("--project")
+@click.option("--unassign", is_flag=True)
+@click.pass_obj
+def assign_document_command(
+    paths: RuntimePaths,
+    document: str,
+    project: str | None,
+    unassign: bool,
+) -> None:
+    if (project is None) == (not unassign):
+        raise click.ClickException("Provide --project or --unassign.")
+    source_id = assign_document(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        document=document,
+        project=project,
+    )
+    click.echo(f"Updated document assignment: {source_id}.")
+
+
+@docs_command.command("list")
+@click.option(
+    "--state",
+    type=click.Choice(sorted(READING_STATES), case_sensitive=False),
+)
+@click.option("--project")
+@click.pass_obj
+def list_document_command(
+    paths: RuntimePaths, state: str | None, project: str | None
+) -> None:
+    items = list_documents(
+        vault_root=paths.vault_root,
+        state=state,
+        project=project,
+    )
+    if not items:
+        click.echo("No tracked documents.")
+        return
+    for item in items:
+        categories = ", ".join(item.categories) or "uncategorized"
+        projects = ", ".join(item.project_ids) or "unassigned"
+        click.echo(
+            f"{item.source_id} | {item.reading_state} | "
+            f"{item.title} | {categories} | {projects}"
+        )
+
+
+@docs_command.command("status")
+@click.pass_obj
+def status_document_library_command(paths: RuntimePaths) -> None:
+    status = document_library_status(vault_root=paths.vault_root)
+    click.echo(f"Documents: {status.total}.")
+    click.echo(
+        f"Unread: {status.counts['unread']}; reading: {status.counts['reading']}; "
+        f"read: {status.counts['read']}; changed: {status.counts['changed']}; "
+        f"archived: {status.counts['archived']}."
+    )
+
+
+@docs_command.command("open")
+@click.pass_obj
+def open_document_library_command(paths: RuntimePaths) -> None:
+    _open_note(paths, DOCUMENT_INBOX_PATH)
 
 
 @cli.group("review-docs")

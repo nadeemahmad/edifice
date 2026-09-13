@@ -9,6 +9,8 @@ description = "Local operational kernel for an Obsidian-centered personal system
 requires-python = ">=3.13,<3.15"
 dependencies = [
   "click>=8.2,<9",
+  "google-api-python-client>=2.190,<3",
+  "google-auth>=2.48,<3",
 ]
 
 [project.scripts]
