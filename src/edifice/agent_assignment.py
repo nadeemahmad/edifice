@@ -104,7 +104,7 @@ def validate_agent_assignment(
         raise AssignmentValidationError(
             f"Invalid assignment learning level: {learning_level}"
         )
-    if not re.fullmatch(r"[0-9a-f]{7,40}", base_revision):
+    if not re.fullmatch(r"[0-9a-f]{40}", base_revision):
         raise AssignmentValidationError("Active assignment has an invalid revision.")
     if not re.fullmatch(r"nahmad/.+-codex", branch):
         raise AssignmentValidationError("Active assignment has an invalid branch.")
@@ -119,9 +119,7 @@ def validate_agent_assignment(
         raise AssignmentValidationError(
             f"Assignment branch mismatch: expected {expected_branch}, got {branch}"
         )
-    if expected_revision is not None and not expected_revision.startswith(
-        base_revision
-    ):
+    if expected_revision is not None and expected_revision != base_revision:
         raise AssignmentValidationError(
             "Assignment revision does not match the current revision."
         )

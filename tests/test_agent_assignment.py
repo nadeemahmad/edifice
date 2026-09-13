@@ -89,6 +89,22 @@ def test_agent_assignment_requires_repository_and_workstream_context() -> None:
         )
 
 
+def test_agent_assignment_rejects_abbreviated_revision() -> None:
+    assignment = _active_assignment()
+    assignment["base_revision"] = "a" * 7
+
+    with pytest.raises(
+        AssignmentValidationError,
+        match="Active assignment has an invalid revision.",
+    ):
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=_registry(),
+            repository_root=REPOSITORY_ROOT,
+            expected_revision="a" * 40,
+        )
+
+
 def test_agent_assignment_command_validates_current_checkout(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
