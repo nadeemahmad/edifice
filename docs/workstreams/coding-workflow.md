@@ -35,6 +35,7 @@ reviewable closeout without unauthorized external mutation.
 
 ## Owned Files
 
+- `docs/engineering/agent-assignment.example.json`
 - `docs/workstreams/coding-workflow.md`
 - `src/edifice/agent_assignment.py`
 - `src/edifice/coding_run.py`
@@ -132,6 +133,19 @@ idempotent retries. Implementation resumed:
   committed bytes from the assignment revision;
 - identical existing runs remain recoverable after their review date, while
   new expired runs remain invalid.
+
+Independent review of revision
+`9c694bf3a40d22f8e6c4356046bbbf4c2391e764` found that standalone assignment
+validation did not require nested instructions governing writable paths.
+Implementation resumed:
+
+- assignment generation and validation now share one governing-instruction
+  discovery function;
+- dispatch rejects assignments missing nested `AGENTS.md` files;
+- the tracked meeting assignment example includes its governing vault
+  instructions;
+- a regression test proves dispatch reads committed registry bytes even when
+  the working-tree file is hidden with `assume-unchanged`.
 
 ## Known Gaps
 

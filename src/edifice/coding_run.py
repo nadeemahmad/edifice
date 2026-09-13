@@ -22,6 +22,7 @@ from edifice.agent_assignment import (
     ALLOWED_LEARNING_LEVELS,
     ALLOWED_MODES,
     AssignmentValidationError,
+    governing_instruction_paths,
     validate_agent_assignment,
 )
 
@@ -344,12 +345,7 @@ def _context_paths(
         _require_string(workstream, "context"),
     }
     context_paths = set(required)
-    for writable_path in writable_paths:
-        path = Path(writable_path)
-        for parent in [Path(), *path.parent.parents[::-1], path.parent]:
-            instruction_path = parent / "AGENTS.md"
-            if (repository_root / instruction_path).is_file():
-                context_paths.add(instruction_path.as_posix())
+    context_paths.update(governing_instruction_paths(repository_root, writable_paths))
     ordered_paths = sorted(context_paths)
     for path in ordered_paths:
         _require_contained_path(

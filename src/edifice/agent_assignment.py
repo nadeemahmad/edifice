@@ -181,28 +181,6 @@ def validate_agent_assignment(
     ):
         _require_string_list(typed_assignment, field)
 
-    required_context = {
-        "AGENTS.md",
-        "docs/agent-context.md",
-        "docs/engineering/owner-practices.md",
-        _require_string(workstream, "context"),
-    }
-    missing_context = sorted(required_context - set(context_paths))
-    if missing_context:
-        raise AssignmentValidationError(
-            "Assignment is missing required context: " + ", ".join(missing_context)
-        )
-
-    for path in context_paths:
-        _validate_repository_path(
-            path,
-            repository_root=repository_root,
-            label="Context path",
-        )
-        if not (repository_root / path).is_file():
-            raise AssignmentValidationError(
-                f"Assignment context path is unavailable: {path}"
-            )
     for path in writable_paths:
         _validate_repository_path(
             path,
@@ -218,7 +196,48 @@ def validate_agent_assignment(
                 f"Writable path is not owned by workstream {workstream_id}: {path}"
             )
 
+    required_context = {
+        "AGENTS.md",
+        "docs/agent-context.md",
+        "docs/engineering/owner-practices.md",
+        _require_string(workstream, "context"),
+    }
+    required_context.update(
+        governing_instruction_paths(repository_root, writable_paths)
+    )
+    missing_context = sorted(required_context - set(context_paths))
+    if missing_context:
+        raise AssignmentValidationError(
+            "Assignment is missing governing instructions or required context: "
+            + ", ".join(missing_context)
+        )
+
+    for path in context_paths:
+        _validate_repository_path(
+            path,
+            repository_root=repository_root,
+            label="Context path",
+        )
+        if not (repository_root / path).is_file():
+            raise AssignmentValidationError(
+                f"Assignment context path is unavailable: {path}"
+            )
     return typed_assignment
+
+
+def governing_instruction_paths(
+    repository_root: Path,
+    writable_paths: list[str],
+) -> list[str]:
+    """Return nested instruction files governing the declared write scope."""
+    instruction_paths: set[str] = set()
+    for writable_path in writable_paths:
+        path = Path(writable_path)
+        for parent in [Path(), *path.parent.parents[::-1], path.parent]:
+            instruction_path = parent / "AGENTS.md"
+            if (repository_root / instruction_path).is_file():
+                instruction_paths.add(instruction_path.as_posix())
+    return sorted(instruction_paths)
 
 
 def _require_mapping(value: object, message: str) -> dict[str, object]:

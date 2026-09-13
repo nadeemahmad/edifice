@@ -13,7 +13,10 @@
     "AGENTS.md",
     "docs/agent-context.md",
     "docs/engineering/owner-practices.md",
-    "docs/workstreams/meeting-notes.md"
+    "docs/workstreams/meeting-notes.md",
+    "vault-template/AGENTS.md",
+    "vault-template/20-work/AGENTS.md",
+    "vault-template/20-work/notes/AGENTS.md"
   ],
   "writable_paths": [
     "docs/workstreams/meeting-notes.md",

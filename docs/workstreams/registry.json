@@ -135,6 +135,7 @@
       "context": "docs/workstreams/coding-workflow.md",
       "owned_paths": [
         "docs/workstreams/coding-workflow.md",
+        "docs/engineering/agent-assignment.example.json",
         "src/edifice/agent_assignment.py",
         "src/edifice/coding-run-schema.json",
         "src/edifice/coding_run.py",
@@ -167,7 +168,6 @@
         "AGENTS.md",
         "docs/agent-context.md",
         "docs/engineering/README.md",
-        "docs/engineering/agent-assignment.example.json",
         "docs/engineering/agent-assignment.schema.json",
         "docs/engineering/agent-closeout-template.md",
         "docs/engineering/integration-ownership.md",

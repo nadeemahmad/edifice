@@ -80,7 +80,7 @@ def test_agent_assignment_requires_repository_and_workstream_context() -> None:
 
     with pytest.raises(
         AssignmentValidationError,
-        match="Assignment is missing required context",
+        match="Assignment is missing governing instructions or required context",
     ):
         validate_agent_assignment(
             assignment=assignment,
@@ -133,7 +133,7 @@ def test_agent_assignment_rejects_writable_path_resolving_outside_repository(
             "writable_paths": ["src/example.py"],
         }
     )
-    registry = {
+    registry: dict[str, object] = {
         "schema_version": 1,
         "integration_owned_paths": [],
         "workstreams": [
@@ -163,6 +163,34 @@ def test_agent_assignment_rejects_write_scope_for_read_only_mode() -> None:
     with pytest.raises(
         AssignmentValidationError,
         match="Read-only assignment mode cannot declare writable paths: review",
+    ):
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=_registry(),
+            repository_root=REPOSITORY_ROOT,
+        )
+
+
+def test_agent_assignment_requires_nested_instructions_for_writable_paths() -> None:
+    assignment = _active_assignment()
+    assignment.update(
+        {
+            "workstream": "coding-workflow",
+            "context_paths": [
+                "AGENTS.md",
+                "docs/agent-context.md",
+                "docs/engineering/owner-practices.md",
+                "docs/workstreams/coding-workflow.md",
+            ],
+            "writable_paths": [
+                "vault-template/20-work/operations/coding-runs/AGENTS.md"
+            ],
+        }
+    )
+
+    with pytest.raises(
+        AssignmentValidationError,
+        match="Assignment is missing governing instructions",
     ):
         validate_agent_assignment(
             assignment=assignment,
@@ -362,3 +390,107 @@ def test_agent_assignment_command_rejects_noncanonical_registry(
         "Invalid assignment: Registry path must be the canonical repository "
         "registry." in capsys.readouterr().err
     )
+
+
+def test_agent_assignment_command_uses_committed_registry_bytes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repository = tmp_path / "repository"
+    context_paths = [
+        "AGENTS.md",
+        "docs/agent-context.md",
+        "docs/engineering/owner-practices.md",
+        "docs/workstreams/example.md",
+    ]
+    for relative_path in [*context_paths, "src/example.py"]:
+        path = repository / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Content\n", encoding="utf-8")
+    registry: dict[str, object] = {
+        "schema_version": 1,
+        "integration_owned_paths": [],
+        "workstreams": [
+            {
+                "id": "example",
+                "context": "docs/workstreams/example.md",
+                "owned_paths": ["src/example.py"],
+            }
+        ],
+    }
+    registry_path = repository / "docs" / "workstreams" / "registry.json"
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+    subprocess.run(
+        ["git", "init", "-b", "nahmad/example-codex"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial repository"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assignment = {
+        "schema_version": 1,
+        "assignment_kind": "active",
+        "assignment_id": "committed-registry",
+        "workstream": "example",
+        "mode": "implementation",
+        "learning_level": "brief",
+        "base_revision": revision,
+        "branch": "nahmad/example-codex",
+        "worktree": str(repository),
+        "objective": "Use committed ownership.",
+        "context_paths": context_paths,
+        "writable_paths": ["src/example.py"],
+        "required_checks": ["pytest"],
+        "prohibited_effects": ["No external mutation."],
+        "completion_criteria": ["Validation passes."],
+    }
+    assignment_path = tmp_path / "assignment.json"
+    assignment_path.write_text(json.dumps(assignment), encoding="utf-8")
+    subprocess.run(
+        [
+            "git",
+            "update-index",
+            "--assume-unchanged",
+            "docs/workstreams/registry.json",
+        ],
+        cwd=repository,
+        check=True,
+    )
+    registry["integration_owned_paths"] = ["src/example.py"]
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+    exit_code = main(
+        [
+            str(assignment_path),
+            "--registry",
+            str(registry_path),
+            "--repository",
+            str(repository),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "Valid active assignment: example" in capsys.readouterr().out
