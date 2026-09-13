@@ -39,7 +39,9 @@ Kernel v0 registers:
 - `idea-seeds`
 - `coding-run`
 
-Tasks remain Markdown checkboxes in the note that owns their context.
+Project notes remain the human-readable context. Stable child task records
+reference their owning `project_id` and mirror completion into project-note
+checkboxes.
 
 ## Ownership
 
@@ -50,6 +52,16 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - `10-personal/notes/meetings`: human-owned personal meeting notes.
 - `10-personal/ai`: agent-writeable research and suggestions.
 - `20-work/operations`: governed work-task state and approved summaries.
+- `20-work/operations/projects/index.json`: durable project identity, status,
+  classification, note path, and review metadata.
+- `20-work/operations/tasks/index.json`: stable child tasks linked by
+  `project_id`.
+- `10-personal/operations/projects/index.json`: personal project identities.
+- `10-personal/operations/tasks/index.json`: personal tasks with nullable
+  `project_id`.
+
+Task assignment history records the previous project, next project, reason,
+and timestamp. Work and personal assignment never cross scopes.
 - `20-work/operations/coding-runs`: durable coding-run JSON and local assignment
   previews.
 - `20-work/operations/meeting-series`: recurring work meeting manifests.

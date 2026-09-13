@@ -53,13 +53,15 @@
     },
     {
       "id": "work-task",
-      "title": "Context-Free Work Task",
+      "title": "Work Projects and Tasks",
       "status": "active",
       "mode": "implementation",
       "context": "docs/workstreams/work-task.md",
       "owned_paths": [
         "docs/workstreams/work-task.md",
+        "src/edifice/work_project.py",
         "src/edifice/work_task.py",
+        "tests/test_project_cli.py",
         "tests/test_task_cli.py"
       ],
       "shared_paths": [
@@ -67,6 +69,8 @@
         "src/edifice/cli.py",
         "vault-template/00-system/getting-started.md",
         "vault-template/00-system/operating-manual.md",
+        "vault-template/00-system/schema.md",
+        "vault-template/00-system/templates/project.md",
         "vault-template/00-system/workflows.md",
         "vault-template/20-work/home.md"
       ],

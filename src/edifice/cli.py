@@ -66,7 +66,23 @@ from edifice.pdf_library import (
     inventory_pdfs,
 )
 from edifice.work_context import gather_work_context
-from edifice.work_task import start_work_task
+from edifice.work_project import (
+    PROJECT_SCOPES,
+    PROJECT_STATUSES,
+    get_work_project,
+    list_work_projects,
+    mark_work_project,
+    select_work_project,
+    start_work_project,
+)
+from edifice.work_task import (
+    add_project_task,
+    assign_project_task,
+    auto_assign_task,
+    complete_project_task,
+    list_project_tasks,
+    start_work_task,
+)
 
 
 @dataclass(frozen=True)
@@ -765,6 +781,259 @@ def start_task_command(
     click.echo(f"Created work task: {result.slug}.")
     click.echo(f"Note: {result.note_path}.")
     click.echo("Run `edifice work` to open it.")
+
+
+@cli.group("project")
+def project_command() -> None:
+    """Create and operate durable work projects."""
+
+
+@project_command.command("start")
+@click.option("--name", required=True)
+@click.option(
+    "--scope",
+    default="work",
+    show_default=True,
+    type=click.Choice(sorted(PROJECT_SCOPES), case_sensitive=False),
+)
+@click.option(
+    "--classification",
+    type=click.Choice(
+        ["public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "--review-on",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.option(
+    "--persistence-reason",
+    default="Active project state required for the current objective.",
+    show_default=True,
+)
+@click.pass_obj
+def start_project_command(
+    paths: RuntimePaths,
+    name: str,
+    scope: str,
+    classification: str | None,
+    review_on: datetime,
+    persistence_reason: str,
+) -> None:
+    """Create and select a durable work project."""
+    result = start_work_project(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        name=name,
+        classification=classification,
+        review_on=review_on.date(),
+        persistence_reason=persistence_reason,
+        scope=scope,
+    )
+    click.echo(f"Created project: {result.slug} ({result.project_id}).")
+    click.echo(f"Selected: {result.note_path}.")
+
+
+@project_command.command("list")
+@click.option(
+    "--scope",
+    type=click.Choice(sorted(PROJECT_SCOPES), case_sensitive=False),
+)
+@click.pass_obj
+def list_project_command(paths: RuntimePaths, scope: str | None) -> None:
+    """List durable work projects."""
+    projects = list_work_projects(vault_root=paths.vault_root, scope=scope)
+    if not projects:
+        click.echo("No work projects.")
+        return
+    for project in projects:
+        selected = "*" if project.selected else " "
+        click.echo(
+            f"{selected} {project.slug} | {project.status} | "
+            f"{project.project_id} | {project.title}"
+        )
+
+
+@project_command.command("select")
+@click.argument("project")
+@click.pass_obj
+def select_project_command(paths: RuntimePaths, project: str) -> None:
+    """Select a registered project."""
+    selected = select_work_project(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        project=project,
+    )
+    click.echo(f"Selected project: {selected.slug}.")
+    click.echo(f"Note: {selected.note_path}.")
+
+
+@project_command.command("status")
+@click.argument("project")
+@click.pass_obj
+def status_project_command(paths: RuntimePaths, project: str) -> None:
+    """Show one registered project."""
+    item = get_work_project(vault_root=paths.vault_root, project=project)
+    click.echo(f"Project: {item.title}")
+    click.echo(f"ID: {item.project_id}")
+    click.echo(f"Status: {item.status}")
+    click.echo(f"Selected: {'yes' if item.selected else 'no'}")
+    click.echo(f"Note: {item.note_path}")
+
+
+@project_command.command("mark")
+@click.argument("project")
+@click.option(
+    "--status",
+    required=True,
+    type=click.Choice(sorted(PROJECT_STATUSES), case_sensitive=False),
+)
+@click.pass_obj
+def mark_project_command(
+    paths: RuntimePaths,
+    project: str,
+    status: str,
+) -> None:
+    """Set a project's lifecycle status."""
+    item = mark_work_project(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        project=project,
+        status=status,
+    )
+    click.echo(f"Marked project {item.slug} as {item.status}.")
+
+
+@task_command.command("add")
+@click.argument("text")
+@click.option("--project")
+@click.option(
+    "--scope",
+    type=click.Choice(["personal", "work"], case_sensitive=False),
+)
+@click.option("--no-project", is_flag=True)
+@click.pass_obj
+def add_task_command(
+    paths: RuntimePaths,
+    text: str,
+    project: str | None,
+    scope: str | None,
+    no_project: bool,
+) -> None:
+    """Add a stable child task to a project."""
+    task = add_project_task(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        project=project,
+        text=text,
+        scope=scope,
+        no_project=no_project,
+    )
+    click.echo(f"Created task: {task.task_id}.")
+    if task.project_id:
+        reason = "current project" if project is None else "project"
+        click.echo(f"Assignment: {reason} {task.project_slug}.")
+    else:
+        click.echo(f"Assignment: none ({task.scope}).")
+
+
+@task_command.command("list")
+@click.option("--project", required=True)
+@click.pass_obj
+def list_task_command(paths: RuntimePaths, project: str) -> None:
+    """List stable child tasks for a project."""
+    tasks = list_project_tasks(vault_root=paths.vault_root, project=project)
+    if not tasks:
+        click.echo("No project tasks.")
+        return
+    for task in tasks:
+        click.echo(
+            f"{task.task_id} | {task.status} | {task.project_slug} | {task.text}"
+        )
+
+
+@task_command.command("complete")
+@click.argument("task_id")
+@click.pass_obj
+def complete_task_command(paths: RuntimePaths, task_id: str) -> None:
+    """Complete one stable project task."""
+    completed = complete_project_task(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        task_id=task_id,
+    )
+    click.echo(f"Completed task: {completed}.")
+
+
+def _assign_task(
+    paths: RuntimePaths,
+    task_id: str,
+    project: str | None,
+    reason: str,
+) -> None:
+    task = assign_project_task(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        task_id=task_id,
+        project=project,
+        reason=reason,
+    )
+    destination = task.project_slug or "none"
+    click.echo(f"Assigned {task_id} to {destination}.")
+
+
+@task_command.command("assign")
+@click.argument("task_id")
+@click.option("--project", required=True)
+@click.pass_obj
+def assign_task_command(paths: RuntimePaths, task_id: str, project: str) -> None:
+    """Assign an unassigned task to a project."""
+    _assign_task(paths, task_id, project, "explicit")
+
+
+@task_command.command("reassign")
+@click.argument("task_id")
+@click.option("--project", required=True)
+@click.pass_obj
+def reassign_task_command(paths: RuntimePaths, task_id: str, project: str) -> None:
+    """Move a task to another project."""
+    _assign_task(paths, task_id, project, "reassigned")
+
+
+@task_command.command("unassign")
+@click.argument("task_id")
+@click.pass_obj
+def unassign_task_command(paths: RuntimePaths, task_id: str) -> None:
+    """Move a task to its scoped unassigned inbox."""
+    _assign_task(paths, task_id, None, "unassigned")
+
+
+@task_command.command("auto-assign")
+@click.argument("task_id")
+@click.option("--apply", is_flag=True)
+@click.pass_obj
+def auto_assign_task_command(
+    paths: RuntimePaths,
+    task_id: str,
+    apply: bool,
+) -> None:
+    """Suggest or apply a unique project-title match."""
+    task, terms = auto_assign_task(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        task_id=task_id,
+        apply=apply,
+    )
+    if task is None or task.project_slug is None:
+        click.echo(f"No unambiguous project match for {task_id}.")
+        return
+    action = "Assigned." if apply else "Preview only."
+    click.echo(
+        f"{task_id} -> {task.project_slug} "
+        f"(matching terms: {', '.join(terms)}). {action}"
+    )
 
 
 @cli.group("review-docs")

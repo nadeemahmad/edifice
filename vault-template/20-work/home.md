@@ -7,21 +7,31 @@ created: 2026-09-08
 
 ## Active context
 
-No work task has been selected.
+No work project has been selected.
 
 ## Start
 
 Start without external context:
 
 ```text
-edifice task start \
-  --name "Task name" \
+edifice project start \
+  --name "Project name" \
+  --scope work \
   --classification netflix-internal \
   --review-on YYYY-MM-DD
 ```
 
-The task becomes the current work item. Add notes and references under its
+The project becomes the current work item. Add notes and references under its
 `Manual context` section.
+
+Add stable child tasks with:
+
+```text
+edifice task add "Task text" --project PROJECT
+```
+
+Omit `--project` to use the selected project. Use
+`--no-project --scope work` to keep a task unassigned until later.
 
 Capture a human-owned meeting note:
 
