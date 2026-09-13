@@ -673,6 +673,64 @@ def test_codex_app_launcher_follows_project_list_pagination(
     assert task.thread_id == "thread-123"
 
 
+def test_codex_app_launcher_does_not_match_sibling_worktree_project(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "main"
+    repository.mkdir()
+    _run_git(repository, "init", "-b", "main")
+    _run_git(repository, "config", "user.email", "test@example.com")
+    _run_git(repository, "config", "user.name", "Test User")
+    (repository / "README.md").write_text("# Repository\n", encoding="utf-8")
+    _run_git(repository, "add", "README.md")
+    _run_git(repository, "commit", "-m", "Initial repository")
+    target = tmp_path / "target"
+    sibling = tmp_path / "sibling"
+    _run_git(repository, "worktree", "add", "-b", "target", str(target))
+    _run_git(repository, "worktree", "add", "-b", "sibling", str(sibling))
+    responses: list[dict[str, object]] = [
+        {"id": 1, "result": {}},
+        {
+            "id": 2,
+            "result": {
+                "data": [
+                    {
+                        "id": "project-sibling",
+                        "roots": [{"path": str(sibling)}],
+                    }
+                ],
+                "nextCursor": None,
+            },
+        },
+    ]
+    process = _FakeAppServerProcess(responses)
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _FakeAppServerProcess:
+        return process
+
+    monkeypatch.setattr(
+        "edifice.coding_launch._start_proxy",
+        start_process,
+    )
+
+    with pytest.raises(
+        CodexLaunchRetryableError,
+        match="No Codex project contains repository",
+    ):
+        launch_with_codex_app(
+            codex_binary="codex-test",
+            title="EDIFICE-200: Launch example",
+            repository=target,
+            model="gpt-test",
+            sandbox="read-only",
+            prompt="Bounded assignment prompt.",
+        )
+
+
 def test_codex_app_launcher_times_out_when_proxy_stalls(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -1651,3 +1709,87 @@ def test_code_launch_records_recovery_when_final_persistence_fails(
     assert assignment_state["status"] == "launch-needs-review"
     assert assignment_state["thread_id"] == "thread-persist"
     assert assignment_state["launch_error"].endswith("final persistence failed")
+
+
+def test_code_launch_recovery_file_survives_repeated_main_record_failure(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+    partial_task = CodexTask(
+        thread_id="thread-durable",
+        turn_id=None,
+        project_id=None,
+        cwd=None,
+        instruction_sources=(),
+    )
+
+    def launch_with_failed_callback(**arguments: object) -> object:
+        callback = arguments["on_thread_started"]
+        assert callable(callback)
+        try:
+            callback(partial_task)
+        except click.ClickException as error:
+            raise CodexTaskStartedError(error.message, partial_task) from error
+        raise AssertionError("callback unexpectedly succeeded")
+
+    write_count = 0
+
+    def fail_after_launch_intent(path: Path, value: dict[str, object]) -> None:
+        nonlocal write_count
+        write_count += 1
+        if write_count >= 2:
+            raise OSError("main record unavailable")
+        path.write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.launch_with_codex_app",
+        launch_with_failed_callback,
+    )
+    monkeypatch.setattr(
+        "edifice.coding_launch._replace_json_atomically",
+        fail_after_launch_intent,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+        input="y\n",
+    )
+
+    run_directory = (
+        vault_root / "20-work" / "operations" / "coding-runs" / "launch-example"
+    )
+    recovery = json.loads(
+        (run_directory / "launch-recovery.json").read_text(encoding="utf-8")
+    )
+    coding_run = json.loads(
+        (run_directory / "coding-run.json").read_text(encoding="utf-8")
+    )
+
+    assert result.exit_code != 0
+    assert "thread-durable" in result.output
+    assert "launch-recovery.json" in result.output
+    assert recovery["thread_id"] == "thread-durable"
+    assert coding_run["assignment"]["status"] == "launching"

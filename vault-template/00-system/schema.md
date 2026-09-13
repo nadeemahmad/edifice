@@ -111,6 +111,9 @@ Tasks remain Markdown checkboxes in the note that owns their context.
   run name fails.
 - Retrying launch returns the recorded task. Partial or mismatched task
   creation preserves recovery metadata instead of claiming success.
+- `launch-recovery.json` preserves the earliest returned thread identity
+  independently of `coding-run.json` so repeated main-record failures do not
+  make a created task undiscoverable.
 
 ## Meeting note ownership
 

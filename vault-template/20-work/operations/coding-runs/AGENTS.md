@@ -9,3 +9,5 @@
   scope pass validation.
 - Launch only through the confirmed coding command. Preserve returned Codex task
   identity even when verification or opening-turn creation fails.
+- Preserve `launch-recovery.json`; it is the fallback task identity when the main
+  coding-run record cannot be updated.

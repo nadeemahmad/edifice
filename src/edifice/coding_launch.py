@@ -142,6 +142,7 @@ def launch_coding_run(
     )
     run_directory = vault_root / CODING_RUN_DIRECTORY / preview.slug
     run_path = run_directory / "coding-run.json"
+    recovery_path = run_directory / "launch-recovery.json"
     assignment_path = run_directory / "agent-assignment.preview.json"
     with _launch_lock(audit_root):
         coding_run = _load_mapping(run_path, "coding run")
@@ -179,6 +180,13 @@ def launch_coding_run(
         _replace_json_atomically(run_path, launching_run)
 
         def record_started_thread(task: CodexTask) -> None:
+            _write_launch_recovery(
+                recovery_path,
+                task=task,
+                model=preview.model,
+                sandbox=preview.sandbox,
+                launch_started_at=launch_started_at,
+            )
             thread_run = dict(launching_run)
             thread_state = dict(launching_state)
             thread_state.update(
@@ -226,7 +234,14 @@ def launch_coding_run(
             )
             failed_state["launch_error"] = error.message
             updated_run["assignment"] = failed_state
-            _replace_json_atomically(run_path, updated_run)
+            try:
+                _replace_json_atomically(run_path, updated_run)
+            except OSError as recovery_error:
+                raise click.ClickException(
+                    f"{error.message} Task {error.task.thread_id} is recorded in "
+                    f"{recovery_path.name}; coding-run recovery update failed: "
+                    f"{recovery_error}"
+                ) from recovery_error
             raise click.ClickException(
                 f"{error.message} Recorded task {error.task.thread_id} for recovery."
             ) from error
@@ -682,6 +697,7 @@ def _repository_project_roots(repository: Path) -> set[Path]:
     for line in result.stdout.splitlines():
         if line.startswith("worktree "):
             roots.add(Path(line.removeprefix("worktree ")).resolve())
+            break
     return roots
 
 
@@ -886,6 +902,36 @@ def _optional_string(value: object) -> str | None:
 
 
 def _replace_json_atomically(path: Path, value: dict[str, object]) -> None:
+    _write_json_atomically(path, value)
+
+
+def _write_launch_recovery(
+    path: Path,
+    *,
+    task: CodexTask,
+    model: str,
+    sandbox: str,
+    launch_started_at: str,
+) -> None:
+    _write_json_atomically(
+        path,
+        {
+            "schema_version": 1,
+            "status": "thread-created",
+            "thread_id": task.thread_id,
+            "turn_id": task.turn_id,
+            "project_id": task.project_id,
+            "cwd": str(task.cwd) if task.cwd is not None else None,
+            "model": model,
+            "sandbox": sandbox,
+            "launch_started_at": launch_started_at,
+            "recorded_at": _now(),
+            "instruction_sources": [str(source) for source in task.instruction_sources],
+        },
+    )
+
+
+def _write_json_atomically(path: Path, value: dict[str, object]) -> None:
     content = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
     with tempfile.NamedTemporaryFile(
         dir=path.parent,
@@ -897,7 +943,8 @@ def _replace_json_atomically(path: Path, value: dict[str, object]) -> None:
         os.fsync(temporary.fileno())
         temporary_path = Path(temporary.name)
     try:
-        temporary_path.chmod(path.stat().st_mode)
+        mode = path.stat().st_mode if path.exists() else 0o600
+        temporary_path.chmod(mode)
         os.replace(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)

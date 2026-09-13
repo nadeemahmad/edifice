@@ -250,6 +250,17 @@ discovery stopped at 100 projects. Implementation resumed:
   durable thread identity when storage recovers;
 - project discovery follows cursor pagination while preserving request order.
 
+Independent review of revision
+`79b6b5edacba40caa56c7be3beb822b67f5b0215` found two major issues:
+project matching admitted unrelated sibling worktrees, and repeated main-record
+failure could lose the thread ID. Implementation resumed:
+
+- project matching now considers only the target and primary Git worktrees;
+- `launch-recovery.json` records thread identity independently immediately
+  after `thread/start`;
+- repeated `coding-run.json` failures return a controlled error that points to
+  the recovery file rather than losing the task identity.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.
