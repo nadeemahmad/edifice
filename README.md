@@ -35,6 +35,10 @@ edifice review-docs open REVIEW
 edifice review-docs status REVIEW
 edifice context gather --jira KEY --repo /absolute/repository/path \
   --classification netflix-internal --review-on YYYY-MM-DD
+edifice code start --name RUN --objective OBJECTIVE --jira KEY \
+  --repo /absolute/repository/path --workstream WORKSTREAM \
+  --mode design --learning-level understand \
+  --classification netflix-internal --review-on YYYY-MM-DD
 edifice pdf add /absolute/path/document.pdf \
   --scope personal --classification personal
 edifice pdf inventory
@@ -77,6 +81,37 @@ The command creates and selects
 the missing external context as `unavailable` or `not-applicable`, leaves
 manual sections for notes and references, and makes `edifice work` open the
 new task. It never contacts an external system.
+
+## Coding runs
+
+Prepare a governed coding run without launching an agent:
+
+```text
+edifice code start \
+  --name "Implement code start" \
+  --objective "Create the first manual coding-run record." \
+  --jira EDIFICE-123 \
+  --repo /absolute/repository/path \
+  --workstream coding-workflow \
+  --mode design \
+  --learning-level understand \
+  --classification netflix-internal \
+  --review-on YYYY-MM-DD
+```
+
+The command requires a clean Git repository on a named branch. It reads the
+registered workstream, derives its writable paths, hashes the required
+repository instructions and owner practices, and records the exact revision.
+It creates:
+
+```text
+20-work/operations/coding-runs/<run>/coding-run.json
+20-work/operations/coding-runs/<run>/agent-assignment.preview.json
+```
+
+JIRA remains authoritative. This first slice validates only the issue-key
+syntax and records JIRA verification as pending. It does not launch an agent,
+modify the target repository, contact an external system, or publish a PR.
 
 ## Meeting notes
 

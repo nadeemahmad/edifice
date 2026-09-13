@@ -15,7 +15,7 @@ operating environment.
 - Tests: pytest
 - Lint and format: Ruff
 - Type checking: strict Pyright
-- Git remote: none
+- Git remote: `origin` points to the GitHub repository.
 
 ## Authority
 

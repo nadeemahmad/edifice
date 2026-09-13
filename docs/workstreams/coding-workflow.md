@@ -1,7 +1,7 @@
 ---
 id: coding-workflow
-status: designed
-mode: design
+status: active
+mode: implementation
 ---
 
 # Coding Workflow
@@ -17,8 +17,12 @@ reviewable closeout without unauthorized external mutation.
 - Decisions D-207 through D-219 define the intended workflow.
 - The owner accepted a manual Phase A walking skeleton for one real repository
   and verified JIRA issue.
-- No coding command, run schema, playbook registry, or runtime enforcement
-  exists.
+- The owner accepted the `edifice code start` interface and local coding-run
+  storage on 2026-09-13.
+- `edifice code start` creates a durable coding-run record and validated active
+  assignment preview without launching an agent or contacting JIRA.
+- Automatic routing, agent launch, playbook qualification, evidence updates,
+  JIRA verification, PR drafting, and external mutation remain unavailable.
 
 ## Intended Work Modes
 
@@ -29,16 +33,13 @@ reviewable closeout without unauthorized external mutation.
 - `verification`
 - `review`
 
-## Proposed Owned Files
+## Owned Files
 
 - `docs/workstreams/coding-workflow.md`
 - `src/edifice/coding_run.py`
-- `src/edifice/coding_worker.py`
 - `src/edifice/coding-run-schema.json`
 - `tests/test_coding_cli.py`
-- `docs/engineering/playbooks/`
-- `docs/engineering/skills.json`
-- `docs/engineering/skills.schema.json`
+- `vault-template/20-work/operations/coding-runs/AGENTS.md`
 
 ## Shared Files
 
@@ -61,14 +62,40 @@ reviewable closeout without unauthorized external mutation.
 - Define behavior tests before implementation.
 - Require exact-revision deterministic verification and independent review.
 
+Implementation evidence:
+
+- Red: the first CLI test failed because `edifice.coding_run` did not exist.
+- Green: the command created the run and assignment preview while leaving the
+  target repository unchanged.
+- Red: an identical retry failed because the run directory already existed.
+- Green: an identical retry returned the existing immutable records.
+- Red: conflicting retry and interrupted-write failures lacked specific CLI
+  errors.
+- Green: conflicts preserve the original run, and interrupted writes leave no
+  partial directory.
+- Red: persistence reason, design evidence, and future verified JIRA fields
+  were absent.
+- Green: the run schema now reserves those fields without claiming evidence.
+- Red: unsafe registered paths were rejected only after context discovery.
+- Green: repository-relative path validation now runs before context discovery.
+
+One initial ownership hypothesis was wrong. Moving shared files into feature
+ownership broke the existing integration-owner assignment invariant. The
+registry now keeps shared files integration-owned and registers only the new
+coding-workflow files as feature-owned.
+
 ## Known Gaps
 
-- The run record and command interface remain undecided.
 - No skill or playbook has been qualified for the pilot.
-- No mechanism proves that an agent loaded every required instruction.
+- Context hashes prove which instructions the starter read. No agent-load
+  acknowledgement exists because this slice does not launch an agent.
+- JIRA syntax is validated, but issue title, URL, and status remain unverified.
+- Mode transitions and TDD, verification, review, closeout, and PR-draft
+  evidence updates remain manual future slices.
 - No PR-draft workflow or JIRA verification gate exists.
 
 ## Write Ownership
 
-Keep this workstream in design mode until the owner accepts the coding-run
-interface and first implementation slice.
+The registry records the bounded integration-owner transfer for this slice.
+Do not widen the paths or add another coding-workflow capability without an
+accepted behavior and test interface.

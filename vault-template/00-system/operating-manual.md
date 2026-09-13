@@ -38,6 +38,7 @@ Owner-facing commands:
 - `edifice review-docs open`
 - `edifice review-docs status`
 - `edifice context gather`
+- `edifice code start`
 - `edifice pdf add`
 - `edifice pdf inventory`
 - `edifice pdf backup-personal`
@@ -70,6 +71,9 @@ Owner-facing commands:
   refreshable generated sections, and read-only source access.
 - Context refresh replaces only marked generated blocks. Manual context remains
   owner-editable.
+- Coding runs record the exact repository revision, work mode, learning level,
+  instruction hashes, registered writable paths, and pending evidence gates.
+  Starting a run does not launch an agent or verify JIRA.
 - Authoritative links and PDF links are preferred. A local PDF copy requires an
   explicit command, source URL, classification, and matching SHA-256.
 - Personal and work PDF bytes remain in separate local directories and

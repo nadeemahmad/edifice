@@ -19,6 +19,8 @@ from edifice.adobe_import import (
     default_adobe_cache_roots,
     plan_adobe_import,
 )
+from edifice.agent_assignment import ALLOWED_LEARNING_LEVELS, ALLOWED_MODES
+from edifice.coding_run import start_coding_run
 from edifice.document_review import (
     add_review_document,
     ensure_review_document_capacity,
@@ -488,6 +490,87 @@ def work(paths: RuntimePaths) -> None:
 def work_context(paths: RuntimePaths) -> None:
     """Open the local work-context cockpit."""
     _open_note(paths, Path("20-work/home.md"))
+
+
+@cli.group("code")
+def code_command() -> None:
+    """Create and operate governed coding runs."""
+
+
+@code_command.command("start")
+@click.option("--name", required=True)
+@click.option("--objective", required=True)
+@click.option("--jira", "jira_key", required=True, help="JIRA issue key.")
+@click.option(
+    "--repo",
+    "repository",
+    required=True,
+    type=click.Path(path_type=Path, file_okay=False),
+    help="Absolute path to the target Git repository root.",
+)
+@click.option("--workstream", "workstream_id", required=True)
+@click.option(
+    "--mode",
+    required=True,
+    type=click.Choice(sorted(ALLOWED_MODES), case_sensitive=False),
+)
+@click.option(
+    "--learning-level",
+    required=True,
+    type=click.Choice(sorted(ALLOWED_LEARNING_LEVELS), case_sensitive=False),
+)
+@click.option(
+    "--classification",
+    required=True,
+    type=click.Choice(
+        ["public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "--review-on",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.option(
+    "--persistence-reason",
+    default="Active coding-run state required for the current objective.",
+    show_default=True,
+)
+@click.pass_obj
+def start_code_command(
+    paths: RuntimePaths,
+    name: str,
+    objective: str,
+    jira_key: str,
+    repository: Path,
+    workstream_id: str,
+    mode: str,
+    learning_level: str,
+    classification: str,
+    review_on: datetime,
+    persistence_reason: str,
+) -> None:
+    """Create a coding run and assignment preview without launching an agent."""
+    result = start_coding_run(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        name=name,
+        objective=objective,
+        jira_key=jira_key,
+        repository=repository,
+        workstream_id=workstream_id,
+        mode=mode,
+        learning_level=learning_level,
+        classification=classification,
+        review_on=review_on.date(),
+        persistence_reason=persistence_reason,
+    )
+    verb = "Created" if result.created else "Existing"
+    click.echo(f"{verb} coding run: {result.slug}.")
+    click.echo(f"Run: {result.run_path}.")
+    click.echo(f"Assignment preview: {result.assignment_path}.")
+    click.echo("No agent launched and no external system contacted.")
 
 
 @cli.group("meeting")

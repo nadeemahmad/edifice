@@ -130,11 +130,15 @@
     {
       "id": "coding-workflow",
       "title": "Coding Workflow",
-      "status": "designed",
-      "mode": "design",
+      "status": "active",
+      "mode": "implementation",
       "context": "docs/workstreams/coding-workflow.md",
       "owned_paths": [
-        "docs/workstreams/coding-workflow.md"
+        "docs/workstreams/coding-workflow.md",
+        "src/edifice/coding-run-schema.json",
+        "src/edifice/coding_run.py",
+        "tests/test_coding_cli.py",
+        "vault-template/20-work/operations/coding-runs/AGENTS.md"
       ],
       "shared_paths": [
         "README.md",
@@ -142,7 +146,8 @@
         "vault-template/00-system/engineering/owner-practices.md",
         "vault-template/00-system/operating-manual.md",
         "vault-template/00-system/schema.md",
-        "vault-template/00-system/workflows.md"
+        "vault-template/00-system/workflows.md",
+        "vault-template/20-work/home.md"
       ],
       "dependencies": [
         "repository-organization",

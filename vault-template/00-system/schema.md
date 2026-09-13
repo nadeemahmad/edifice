@@ -37,6 +37,7 @@ Kernel v0 registers:
 - `document-review-run-report`
 - `inbox-routing-review`
 - `idea-seeds`
+- `coding-run`
 
 Tasks remain Markdown checkboxes in the note that owns their context.
 
@@ -49,6 +50,8 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - `10-personal/notes/meetings`: human-owned personal meeting notes.
 - `10-personal/ai`: agent-writeable research and suggestions.
 - `20-work/operations`: governed work-task state and approved summaries.
+- `20-work/operations/coding-runs`: durable coding-run JSON and local assignment
+  previews.
 - `20-work/operations/meeting-series`: recurring work meeting manifests.
 - `20-work/operations/ideas`: classified work idea seeds that have not been
   promoted into tasks or projects.
@@ -88,6 +91,19 @@ Tasks remain Markdown checkboxes in the note that owns their context.
   questions, and next actions.
 - Local PDF copies record their authoritative source, classification, SHA-256,
   size, and verification result.
+
+## Coding run ownership
+
+- Each run directory contains `coding-run.json` and
+  `agent-assignment.preview.json`.
+- The run records one active mode, one learning level, the exact repository
+  branch and revision, registered writable paths, and hashes for loaded
+  repository context.
+- JIRA evidence begins as `pending-verification`.
+- Empty design, TDD, verification, review, closeout, and PR-draft evidence
+  lists do not prove that a gate has passed.
+- Retrying the same run preserves the original records. Conflicting reuse of a
+  run name fails.
 
 ## Meeting note ownership
 

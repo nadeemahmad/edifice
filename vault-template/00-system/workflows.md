@@ -17,6 +17,7 @@ created: 2026-09-07
 - `edifice task start` creates and selects a task without external context.
 - `edifice review-docs` creates and operates reusable document reviews.
 - `edifice context gather` creates or refreshes bounded work context.
+- `edifice code start` creates a coding-run record and assignment preview.
 - `edifice pdf add` copies and catalogs one intentionally selected PDF.
 - `edifice pdf inventory` verifies both local PDF catalogs.
 - `edifice pdf backup-personal` reconciles every personal PDF to the configured
@@ -117,6 +118,24 @@ For recurring meetings:
    bulk exports.
 10. Keep external mutation disabled.
 11. Remove or relocate `20-work` before personal Sync is enabled.
+
+## Coding run
+
+1. Select a real Git repository, registered workstream, objective, JIRA key,
+   primary mode, and learning level.
+2. Run `edifice code start` from a clean named branch.
+3. Inspect the durable coding-run record and active assignment preview.
+4. Treat JIRA as unverified until an approved read-only workflow records its
+   exact title and URL.
+5. Accept a lightweight design before material implementation.
+6. Record behavior changes through test-first vertical slices.
+7. Verify the exact final revision before independent findings-first review.
+8. Prepare a PR description from verified evidence, but do not publish without
+   owner approval.
+9. Keep mode changes and evidence updates manual until later slices implement
+   explicit commands.
+10. Do not infer agent launch, JIRA access, repository mutation, review, or
+    publication from the existence of a run record.
 
 ## Document review
 
