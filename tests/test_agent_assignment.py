@@ -1,6 +1,5 @@
 import copy
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -105,27 +104,25 @@ def test_agent_assignment_rejects_abbreviated_revision() -> None:
         )
 
 
-def test_agent_assignment_command_validates_current_checkout(
+def test_agent_assignment_command_validates_feature_checkout(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assignment = _active_assignment()
-    assignment["branch"] = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    assignment["base_revision"] = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=REPOSITORY_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    assignment["branch"] = "nahmad/meeting-notes-codex"
+    assignment["base_revision"] = "a" * 40
     assignment_path = tmp_path / "assignment.json"
     assignment_path.write_text(json.dumps(assignment), encoding="utf-8")
+
+    def git_value(_repository_root: Path, *arguments: str) -> str:
+        if arguments == ("branch", "--show-current"):
+            return "nahmad/meeting-notes-codex"
+        if arguments == ("rev-parse", "HEAD"):
+            return "a" * 40
+        raise AssertionError(f"Unexpected Git arguments: {arguments}")
+
+    monkeypatch.setattr("edifice.agent_assignment._git_value", git_value)
 
     exit_code = main(
         [
