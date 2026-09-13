@@ -1135,6 +1135,23 @@ def test_inbox_route_preserves_route_binding_during_completed_route_recovery(
     )
     assert "Disposition: `archived`" not in inbox_path.read_text(encoding="utf-8")
 
+    repaired = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "inbox",
+            "route",
+            capture_id,
+            "--to",
+            "current-work-note",
+        ],
+    )
+
+    repaired_note = work_path.read_text(encoding="utf-8")
+    assert repaired.exit_code == 0
+    assert repaired_note.count("Keep this work note.") == 1
+    assert f"  - Route: `{route_id}`" in repaired_note
+
 
 def test_inbox_route_preserves_classification_during_completed_route_recovery(
     tmp_path: Path,

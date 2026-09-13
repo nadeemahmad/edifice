@@ -426,7 +426,13 @@ def route_capture(
             classification=normalized_classification,
         )
         if f"`{route_id}`" not in target:
-            target = _append_to_heading(target, heading, routed_item)
+            target = _repair_or_append_routed_item(
+                target,
+                heading=heading,
+                routed_item=routed_item,
+                capture_id=capture.capture_id,
+                route_id=route_id,
+            )
             _replace_atomically(target_path, target.encode())
 
         updated_lines = _mark_capture_routed(
@@ -675,6 +681,36 @@ def _routed_item(
         lines.append(f"  - Classification: `{classification}`")
     lines.append(f"  - Route: `{route_id}`")
     return "\n".join(lines)
+
+
+def _repair_or_append_routed_item(
+    note: str,
+    *,
+    heading: str,
+    routed_item: str,
+    capture_id: str,
+    route_id: str,
+) -> str:
+    source_reference = f"[[01-inbox/inbox#^{capture_id}|capture]]"
+    reference_count = note.count(source_reference)
+    if reference_count > 1:
+        raise click.ClickException(
+            f"Destination contains duplicate capture references: {capture_id}"
+        )
+    if reference_count == 0:
+        return _append_to_heading(note, heading, routed_item)
+
+    lines = note.splitlines()
+    source_index = next(
+        index for index, line in enumerate(lines) if source_reference in line
+    )
+    insertion_index = source_index + 1
+    if insertion_index < len(lines) and lines[insertion_index].startswith(
+        "  - Classification: "
+    ):
+        insertion_index += 1
+    lines.insert(insertion_index, f"  - Route: `{route_id}`")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _append_to_heading(note: str, heading: str, item: str) -> str:

@@ -27,6 +27,8 @@ without losing their original wording.
   change between attempts.
 - Archive writes persist their route binding before changing the Inbox so a
   failed final ledger write remains recoverable only as archive.
+- Damaged destinations with one existing capture source link repair the missing
+  route marker instead of appending duplicate content.
 
 ## Owned Files
 
