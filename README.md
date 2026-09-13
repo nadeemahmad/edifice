@@ -35,7 +35,7 @@ edifice review-docs open REVIEW
 edifice review-docs status REVIEW
 edifice context gather --jira KEY --repo /absolute/repository/path \
   --classification netflix-internal --review-on YYYY-MM-DD
-edifice code start --name RUN --objective OBJECTIVE --jira KEY \
+edifice code start --name RUN --objective OBJECTIVE [--jira KEY] \
   --repo /absolute/repository/path --workstream WORKSTREAM \
   --mode design --learning-level understand \
   --classification netflix-internal --review-on YYYY-MM-DD
@@ -111,8 +111,10 @@ practices, and records the exact revision. It creates:
 ```
 
 JIRA remains authoritative. This first slice validates only the issue-key
-syntax and records JIRA verification as pending. It does not launch an agent,
-modify the target repository, contact an external system, or publish a PR.
+syntax and records JIRA verification as pending when `--jira` is supplied.
+Runs without a JIRA issue omit the option and record JIRA as `not-applicable`.
+Starting a run does not launch an agent, modify the target repository, contact
+an external system, or publish a PR.
 
 Preview a Codex task launch without contacting Codex:
 

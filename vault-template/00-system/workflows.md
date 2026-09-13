@@ -122,15 +122,15 @@ For recurring meetings:
 
 ## Coding run
 
-1. Select a real Git repository, registered workstream, objective, JIRA key,
-   primary mode, and learning level.
+1. Select a real Git repository, registered workstream, objective, primary
+   mode, and learning level. Add a JIRA key only when an issue applies.
 2. Run `edifice code start` from a clean named branch.
 3. Inspect the durable coding-run record and active assignment preview.
 4. Preview launch with `edifice --dry-run code launch RUN --model MODEL`.
 5. Launch only after confirming the project, worktree, model, sandbox, and
    task title.
-6. Treat JIRA as unverified until an approved read-only workflow records its
-   exact title and URL.
+6. Treat a supplied JIRA key as unverified until an approved read-only workflow
+   records its exact title and URL.
 7. Accept a lightweight design before material implementation.
 8. Record behavior changes through test-first vertical slices.
 9. Verify the exact final revision before independent findings-first review.

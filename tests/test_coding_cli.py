@@ -212,6 +212,120 @@ def test_code_start_creates_governed_run_and_assignment_without_touching_reposit
     assert _run_git(repository, "status", "--porcelain") == before_status
 
 
+def test_code_start_verification_mode_allows_jira_not_applicable(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    monkeypatch.setattr(
+        "edifice.coding_run._now",
+        lambda: datetime(2026, 9, 13, 16, 30, tzinfo=UTC),
+    )
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Launch verification",
+            "--objective",
+            "Verify one disposable Codex launch.",
+            "--jira",
+            "not-applicable",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "verification",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "launch-verification"
+        / "coding-run.json"
+    )
+    coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert coding_run["jira"] == {
+        "key": None,
+        "title": None,
+        "url": None,
+        "evidence_status": "not-applicable",
+    }
+
+
+def test_code_start_implementation_mode_allows_omitted_jira(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    monkeypatch.setattr(
+        "edifice.coding_run._now",
+        lambda: datetime(2026, 9, 13, 16, 30, tzinfo=UTC),
+    )
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Local implementation",
+            "--objective",
+            "Implement work without a JIRA issue.",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "implementation",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "local-implementation"
+        / "coding-run.json"
+    )
+    coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert coding_run["jira"] == {
+        "key": None,
+        "title": None,
+        "url": None,
+        "evidence_status": "not-applicable",
+    }
+
+
 def test_code_start_retry_returns_identical_existing_run(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,

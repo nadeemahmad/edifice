@@ -82,7 +82,9 @@ def _start_run(
     vault_root: Path,
     audit_root: Path,
     repository: Path,
+    jira_key: str | None = "EDIFICE-200",
 ) -> None:
+    jira_arguments = ["--jira", jira_key] if jira_key is not None else []
     result = runner.invoke(
         cli,
         [
@@ -93,8 +95,7 @@ def _start_run(
             "Launch example",
             "--objective",
             "Create one visible Codex task.",
-            "--jira",
-            "EDIFICE-200",
+            *jira_arguments,
             "--repo",
             str(repository),
             "--workstream",
@@ -110,6 +111,41 @@ def _start_run(
         ],
     )
     assert result.exit_code == 0
+
+
+def test_code_launch_without_jira_uses_run_name_as_task_title(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+        jira_key=None,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "--dry-run",
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Task: Launch example." in result.output
+    assert "not-applicable" not in result.output
 
 
 def test_code_launch_dry_run_previews_task_without_contacting_codex(

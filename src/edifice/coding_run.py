@@ -66,7 +66,7 @@ def start_coding_run(
     audit_root: Path,
     name: str,
     objective: str,
-    jira_key: str,
+    jira_key: str | None,
     repository: Path,
     workstream_id: str,
     mode: str,
@@ -79,8 +79,8 @@ def start_coding_run(
     normalized_name = _normalize_text(name, "Coding run name")
     slug = _slug(normalized_name)
     normalized_objective = _normalize_text(objective, "Objective")
-    normalized_jira_key = _validate_jira_key(jira_key)
     normalized_mode = _validate_choice(mode, "mode", ALLOWED_MODES)
+    jira = _jira_state(jira_key)
     normalized_learning_level = _validate_choice(
         learning_level,
         "learning level",
@@ -165,12 +165,7 @@ def start_coding_run(
         "persistence_reason": normalized_persistence_reason,
         "classification": normalized_classification,
         "review_on": review_on.isoformat(),
-        "jira": {
-            "key": normalized_jira_key,
-            "title": None,
-            "url": None,
-            "evidence_status": "pending-verification",
-        },
+        "jira": jira,
         "repository": {
             "path": str(repository_root),
             "branch": branch,
@@ -423,6 +418,22 @@ def _validate_jira_key(value: str) -> str:
     if not JIRA_KEY_PATTERN.fullmatch(normalized):
         raise click.ClickException(f"Invalid JIRA key: {value}")
     return normalized
+
+
+def _jira_state(value: str | None) -> dict[str, object]:
+    if value is None or value.strip().lower() == "not-applicable":
+        return {
+            "key": None,
+            "title": None,
+            "url": None,
+            "evidence_status": "not-applicable",
+        }
+    return {
+        "key": _validate_jira_key(value),
+        "title": None,
+        "url": None,
+        "evidence_status": "pending-verification",
+    }
 
 
 def _validate_choice(value: str, label: str, allowed: set[str] | frozenset[str]) -> str:

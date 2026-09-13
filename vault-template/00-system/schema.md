@@ -99,7 +99,8 @@ Tasks remain Markdown checkboxes in the note that owns their context.
 - The run records one active mode, one learning level, the exact repository
   branch and revision, registered writable paths, and hashes for loaded
   repository context.
-- JIRA evidence begins as `pending-verification`.
+- JIRA evidence is `not-applicable` when no issue applies. Supplied keys begin
+  as `pending-verification`.
 - Assignment launch state is `not-launched`, `launching`, `launch-retryable`,
   `launched`, or `launch-needs-review`. Launch intent records runtime, model,
   sandbox, worktree, and start time before app-server contact. Completed and

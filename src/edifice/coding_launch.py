@@ -104,7 +104,9 @@ def prepare_coding_launch(
     repository_data = _require_mapping(coding_run.get("repository"), "repository")
     repository = Path(_require_string(repository_data, "path"))
     jira = _require_mapping(coding_run.get("jira"), "jira")
-    title = f"{_require_string(jira, 'key')}: {_require_string(coding_run, 'name')}"
+    name = _require_string(coding_run, "name")
+    jira_key = _optional_string(jira.get("key"))
+    title = f"{jira_key}: {name}" if jira_key is not None else name
     mode = _require_string(coding_run, "active_mode")
     sandbox = "read-only" if mode in READ_ONLY_MODES else "workspace-write"
     if validate_launch:

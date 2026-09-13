@@ -23,6 +23,8 @@ reviewable closeout without unauthorized external mutation.
   assignment preview without launching an agent or contacting JIRA.
 - `edifice code launch` previews and confirms one persistent Codex task through
   the local app-server daemon, then records its task identity.
+- JIRA is optional for every coding run. Omitted JIRA records
+  `evidence_status: not-applicable`; supplied keys remain pending verification.
 - Automatic routing, playbook qualification, checkpoint capture, JIRA
   verification, PR drafting, and unrelated external mutation remain
   unavailable.
@@ -278,12 +280,25 @@ writes had failed. The message now checks for the recovery file before making
 that claim and always reports the thread ID. The README now states that saved
 project resolution occurs after confirmation.
 
+Independent review of revision
+`1ced5873d5c727ee49cd99ba6ff1f113dd0553f9` found no blocker, major, or
+minor findings.
+
+JIRA-optional implementation evidence:
+
+- Red: verification mode rejected `not-applicable`, and implementation mode
+  required `--jira`.
+- Green: every mode may omit JIRA or use `not-applicable`; supplied issue keys
+  retain validation and pending-verification state.
+- JIRA-free launch titles use the run name without a placeholder prefix.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.
 - App-server instruction sources are recorded, but full agent context
   acknowledgement and checkpoint capture remain unavailable.
-- JIRA syntax is validated, but issue title, URL, and status remain unverified.
+- Supplied JIRA syntax is validated, but issue title, URL, and status remain
+  unverified.
 - Mode transitions and TDD, verification, review, closeout, and PR-draft
   evidence updates remain manual future slices.
 - No PR-draft workflow or JIRA verification gate exists.

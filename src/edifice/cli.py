@@ -501,7 +501,7 @@ def code_command() -> None:
 @code_command.command("start")
 @click.option("--name", required=True)
 @click.option("--objective", required=True)
-@click.option("--jira", "jira_key", required=True, help="JIRA issue key.")
+@click.option("--jira", "jira_key", help="Optional JIRA issue key.")
 @click.option(
     "--repo",
     "repository",
@@ -543,7 +543,7 @@ def start_code_command(
     paths: RuntimePaths,
     name: str,
     objective: str,
-    jira_key: str,
+    jira_key: str | None,
     repository: Path,
     workstream_id: str,
     mode: str,

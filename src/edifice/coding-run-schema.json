@@ -81,7 +81,10 @@
       ],
       "properties": {
         "key": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^[A-Z][A-Z0-9]+-[1-9][0-9]*$"
         },
         "title": {
@@ -100,10 +103,37 @@
         "evidence_status": {
           "enum": [
             "pending-verification",
-            "verified"
+            "verified",
+            "not-applicable"
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "evidence_status": {
+                "const": "not-applicable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "key": {
+                "const": null
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9]+-[1-9][0-9]*$"
+              }
+            }
+          }
+        }
+      ]
     },
     "repository": {
       "type": "object",
