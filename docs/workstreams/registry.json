@@ -7,6 +7,7 @@
     "src/edifice/context_worker.py",
     "tests/test_doctor_cli.py",
     "vault-template/AGENTS.md",
+    "vault-template/00-system/engineering/owner-practices.md",
     "vault-template/00-system/getting-started.md",
     "vault-template/00-system/operating-manual.md",
     "vault-template/00-system/schema.md",
@@ -158,6 +159,7 @@
       "owned_paths": [
         "AGENTS.md",
         "docs/agent-context.md",
+        "docs/engineering/README.md",
         "docs/engineering/agent-assignment.example.json",
         "docs/engineering/agent-assignment.schema.json",
         "docs/engineering/agent-closeout-template.md",
@@ -167,6 +169,8 @@
         "docs/workstreams/registry.json",
         "docs/workstreams/registry.schema.json",
         "docs/workstreams/repository-organization.md",
+        "src/edifice/agent_assignment.py",
+        "tests/test_agent_assignment.py",
         "tests/test_repository_context.py"
       ],
       "shared_paths": [],

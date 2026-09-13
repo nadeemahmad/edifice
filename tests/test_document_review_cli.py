@@ -1,8 +1,10 @@
 import json
+import os
 import sys
 from pathlib import Path
 
 from click.testing import CliRunner
+from pytest import MonkeyPatch
 
 from edifice.cli import cli
 
@@ -146,6 +148,60 @@ def test_review_docs_start_creates_reusable_manifest_and_notes(
     assert "<!-- edifice:document-review-analysis:start -->" in ai_note.read_text(
         encoding="utf-8"
     )
+
+
+def test_review_docs_start_rolls_back_partial_files_when_creation_fails(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    original_link = os.link
+
+    def fail_ai_note(source: str | Path, target: str | Path) -> None:
+        if Path(target).parent == vault_root / "20-work" / "ai":
+            raise PermissionError("AI note directory is unavailable")
+        original_link(source, target)
+
+    monkeypatch.setattr(
+        "edifice.document_review.os.link",
+        fail_ai_note,
+    )
+    arguments = [
+        *_base_arguments(vault_root, tmp_path / "audit"),
+        "review-docs",
+        "start",
+        "--name",
+        "Architecture review",
+        "--classification",
+        "netflix-internal",
+        "--review-on",
+        "2026-09-15",
+    ]
+    runner = CliRunner()
+
+    failed = runner.invoke(cli, arguments)
+
+    review_paths = (
+        vault_root
+        / "20-work"
+        / "references"
+        / "document-reviews"
+        / "architecture-review.json",
+        vault_root
+        / "20-work"
+        / "operations"
+        / "projects"
+        / "architecture-review-document-review.md",
+        vault_root / "20-work" / "ai" / "architecture-review-document-review.md",
+    )
+    assert failed.exit_code != 0
+    assert all(not path.exists() for path in review_paths)
+
+    monkeypatch.undo()
+    retried = runner.invoke(cli, arguments)
+
+    assert retried.exit_code == 0
+    assert all(path.is_file() for path in review_paths)
 
 
 def test_review_docs_add_preserves_manual_notes_and_deduplicates_links(
@@ -463,6 +519,54 @@ def test_review_docs_add_copy_pdf_uses_work_pdf_catalog(tmp_path: Path) -> None:
     assert (vault_root / "20-work" / "references" / "pdf-catalog.json").is_file()
 
 
+def test_review_docs_add_validates_owner_context_before_copying_pdf(
+    tmp_path: Path,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "start",
+                "--name",
+                "Architecture review",
+                "--classification",
+                "netflix-internal",
+                "--review-on",
+                "2026-09-15",
+            ],
+        ).exit_code
+        == 0
+    )
+    source_pdf = tmp_path / "Design Notes.pdf"
+    source_pdf.write_bytes(b"%PDF-1.7\nreview fixture\n%%EOF\n")
+
+    added = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "review-docs",
+            "add",
+            "architecture-review",
+            "--copy-pdf",
+            str(source_pdf),
+            "https://example.netflix.net/design-notes.pdf",
+            "--context",
+            "x" * 2001,
+            "--accept-pdf-name",
+        ],
+    )
+
+    assert added.exit_code != 0
+    assert "Document context must contain at most 2000 characters." in added.output
+    assert not (vault_root / "20-work" / "references" / "pdf-catalog.json").exists()
+    assert not list((vault_root / "20-work" / "references" / "pdfs").rglob("*.pdf"))
+
+
 def test_review_docs_duplicate_pdf_url_does_not_copy_another_pdf(
     tmp_path: Path,
 ) -> None:
@@ -516,6 +620,80 @@ def test_review_docs_duplicate_pdf_url_does_not_copy_another_pdf(
     assert (
         len(list((vault_root / "20-work" / "references" / "pdfs").rglob("*.pdf"))) == 1
     )
+
+
+def test_review_docs_copy_pdf_upgrades_existing_pdf_link(
+    tmp_path: Path,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "start",
+                "--name",
+                "Architecture review",
+                "--classification",
+                "netflix-internal",
+                "--review-on",
+                "2026-09-15",
+            ],
+        ).exit_code
+        == 0
+    )
+    source_url = "https://example.netflix.net/design-notes.pdf"
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "add",
+                "architecture-review",
+                "--pdf-link",
+                source_url,
+            ],
+        ).exit_code
+        == 0
+    )
+    source_pdf = tmp_path / "Design Notes.pdf"
+    source_pdf.write_bytes(b"%PDF-1.7\nreview fixture\n%%EOF\n")
+
+    upgraded = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "review-docs",
+            "add",
+            "architecture-review",
+            "--copy-pdf",
+            str(source_pdf),
+            source_url,
+            "--accept-pdf-name",
+        ],
+    )
+
+    manifest = json.loads(
+        (
+            vault_root
+            / "20-work"
+            / "references"
+            / "document-reviews"
+            / "architecture-review.json"
+        ).read_text(encoding="utf-8")
+    )
+    document = manifest["documents"][0]
+    assert upgraded.exit_code == 0
+    assert "Updated" in upgraded.output
+    assert len(manifest["documents"]) == 1
+    assert document["kind"] == "local-pdf"
+    assert document["local_path"].startswith("20-work/references/pdfs/")
+    assert (vault_root / document["local_path"]).is_file()
+    assert (vault_root / "20-work" / "references" / "pdf-catalog.json").is_file()
 
 
 def test_review_docs_gather_uses_read_only_allowlisted_worker_and_preserves_manual_ai_notes(
@@ -726,6 +904,43 @@ def test_review_docs_synthesize_updates_context_without_overwriting_manual_conte
         ).exit_code
         == 0
     )
+    for url in (
+        "https://docs.google.com/document/d/one",
+        "https://docs.google.com/document/d/two",
+    ):
+        assert (
+            runner.invoke(
+                cli,
+                [
+                    *_base_arguments(vault_root, audit_root),
+                    "review-docs",
+                    "add",
+                    "architecture-review",
+                    "--link",
+                    url,
+                ],
+            ).exit_code
+            == 0
+        )
+    fake_codex, invocation_log = _create_fake_codex(tmp_path)
+    environment = {
+        "EDIFICE_CODEX_BIN": str(fake_codex),
+        "EDIFICE_FAKE_CODEX_LOG": str(invocation_log),
+        "EDIFICE_FAKE_CODEX_RESPONSE": json.dumps(_review_result()),
+    }
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "gather",
+                "architecture-review",
+            ],
+            env=environment,
+        ).exit_code
+        == 0
+    )
     context_note = (
         vault_root
         / "20-work"
@@ -740,16 +955,6 @@ def test_review_docs_synthesize_updates_context_without_overwriting_manual_conte
         ),
         encoding="utf-8",
     )
-    latest_path = (
-        vault_root
-        / "20-work"
-        / "references"
-        / "document-reviews"
-        / "architecture-review-latest.json"
-    )
-    latest_path.parent.mkdir(parents=True, exist_ok=True)
-    latest_path.write_text(json.dumps(_review_result()), encoding="utf-8")
-
     synthesized = runner.invoke(
         cli,
         [
@@ -764,6 +969,103 @@ def test_review_docs_synthesize_updates_context_without_overwriting_manual_conte
     assert synthesized.exit_code == 0
     assert "The documents agree on the core design." in content
     assert "Keep this exact draft." in content
+
+
+def test_review_docs_synthesize_rejects_result_after_manifest_changes(
+    tmp_path: Path,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "start",
+                "--name",
+                "Architecture review",
+                "--classification",
+                "netflix-internal",
+                "--review-on",
+                "2026-09-15",
+            ],
+        ).exit_code
+        == 0
+    )
+    for url in (
+        "https://docs.google.com/document/d/one",
+        "https://docs.google.com/document/d/two",
+    ):
+        assert (
+            runner.invoke(
+                cli,
+                [
+                    *_base_arguments(vault_root, audit_root),
+                    "review-docs",
+                    "add",
+                    "architecture-review",
+                    "--link",
+                    url,
+                ],
+            ).exit_code
+            == 0
+        )
+    fake_codex, invocation_log = _create_fake_codex(tmp_path)
+    environment = {
+        "EDIFICE_CODEX_BIN": str(fake_codex),
+        "EDIFICE_FAKE_CODEX_LOG": str(invocation_log),
+        "EDIFICE_FAKE_CODEX_RESPONSE": json.dumps(_review_result()),
+    }
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "gather",
+                "architecture-review",
+            ],
+            env=environment,
+        ).exit_code
+        == 0
+    )
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "add",
+                "architecture-review",
+                "--link",
+                "https://docs.google.com/document/d/three",
+            ],
+        ).exit_code
+        == 0
+    )
+
+    synthesized = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "review-docs",
+            "synthesize",
+            "architecture-review",
+        ],
+    )
+
+    context_note = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "projects"
+        / "architecture-review-document-review.md"
+    ).read_text(encoding="utf-8")
+    assert synthesized.exit_code != 0
+    assert "Document review changed after the latest gather." in synthesized.output
+    assert "The documents agree on the core design." not in context_note
 
 
 def test_review_docs_status_reports_persistent_session_state(tmp_path: Path) -> None:

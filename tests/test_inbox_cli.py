@@ -653,3 +653,155 @@ def test_inbox_review_interactively_routes_personal_idea_and_archives(
     assert "Would open 10-personal/operations/inbox/review.md in Obsidian." in (
         result.output
     )
+
+
+def test_inbox_route_rejects_classification_for_personal_destination(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    inbox_path = vault_root / "01-inbox" / "inbox.md"
+    inbox_path.parent.mkdir(parents=True)
+    inbox_path.write_text(
+        "# Inbox\n\n- [ ] Preserve this as a personal idea.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "edifice.inbox._now",
+        lambda: datetime(2026, 9, 13, 16, 0, tzinfo=UTC),
+    )
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, tmp_path / "audit"),
+                "inbox",
+                "process",
+            ],
+        ).exit_code
+        == 0
+    )
+    capture_match = re.search(
+        r"\^(capture-[0-9a-f-]{36})",
+        inbox_path.read_text(encoding="utf-8"),
+    )
+    assert capture_match is not None
+    capture_id = capture_match.group(1)
+
+    routed = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "inbox",
+            "route",
+            capture_id,
+            "--to",
+            "personal-idea",
+            "--classification",
+            "netflix-confidential",
+        ],
+    )
+
+    assert routed.exit_code != 0
+    assert "Classification is allowed only for work-idea routes." in routed.output
+    assert not (
+        vault_root / "10-personal" / "ai" / "ideas" / "capture-ideas.md"
+    ).exists()
+    assert f"- [ ] Preserve this as a personal idea. ^{capture_id}" in (
+        inbox_path.read_text(encoding="utf-8")
+    )
+
+
+def test_inbox_route_rejects_different_route_after_completion(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    inbox_path = vault_root / "01-inbox" / "inbox.md"
+    inbox_path.parent.mkdir(parents=True)
+    inbox_path.write_text(
+        "# Inbox\n\n- [ ] Keep this work note.\n",
+        encoding="utf-8",
+    )
+    work_relative_path = Path("20-work/operations/projects/current-work.md")
+    work_path = vault_root / work_relative_path
+    work_path.parent.mkdir(parents=True)
+    work_path.write_text(
+        """# Current work
+
+## Manual context
+
+### Notes
+
+### Questions
+
+## Tasks
+""",
+        encoding="utf-8",
+    )
+    current_path = vault_root / "00-system" / "current.json"
+    current_path.parent.mkdir(parents=True)
+    current_path.write_text(
+        json.dumps({"work": work_relative_path.as_posix()}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "edifice.inbox._now",
+        lambda: datetime(2026, 9, 13, 16, 0, tzinfo=UTC),
+    )
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, tmp_path / "audit"),
+                "inbox",
+                "process",
+            ],
+        ).exit_code
+        == 0
+    )
+    capture_match = re.search(
+        r"\^(capture-[0-9a-f-]{36})",
+        inbox_path.read_text(encoding="utf-8"),
+    )
+    assert capture_match is not None
+    capture_id = capture_match.group(1)
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, tmp_path / "audit"),
+                "inbox",
+                "route",
+                capture_id,
+                "--to",
+                "current-work-note",
+            ],
+        ).exit_code
+        == 0
+    )
+    routing_path = vault_root / "10-personal" / "operations" / "inbox" / "routing.json"
+    routing_before = routing_path.read_bytes()
+    inbox_before = inbox_path.read_bytes()
+
+    rerouted = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "inbox",
+            "route",
+            capture_id,
+            "--to",
+            "archive",
+        ],
+    )
+
+    assert rerouted.exit_code != 0
+    assert "Capture already completed through route current-work-note." in (
+        rerouted.output
+    )
+    assert routing_path.read_bytes() == routing_before
+    assert inbox_path.read_bytes() == inbox_before
+    assert "Disposition: `archived`" not in inbox_path.read_text(encoding="utf-8")

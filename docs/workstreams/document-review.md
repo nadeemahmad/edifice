@@ -19,6 +19,12 @@ mutation.
 - Source modules, schema, CLI commands, templates, and tests exist locally.
 - One live-vault trial record exists but has not gathered its source.
 - The implementation predates the work-task, Inbox, and meeting-note changes.
+- Synthesis is bound to the gathered manifest and revalidates document
+  identity before publication.
+- Review creation rolls back partial files, and PDF metadata is validated
+  before ingestion.
+- Existing PDF links can be upgraded to governed local copies without creating
+  duplicate manifest entries.
 
 ## Owned Files
 
@@ -54,14 +60,15 @@ mutation.
 
 - Focused document-review tests exist.
 - The latest full source verification passed before repository organization.
-- Re-run focused and full checks after separation.
+- Independent review reproduced stale synthesis, partial creation, metadata
+  ordering, and PDF-upgrade failures before their regression fixes.
+- Re-run focused and full checks after every further change.
 
 ## Known Gaps
 
 - The live review date is stale and no gather has occurred.
-- Start, add, and synthesize writes do not yet share one complete transaction
-  and audit contract.
-- The workstream has not received an independent findings-first review.
+- Add and synthesize writes do not yet share one cross-process lock and audit
+  contract.
 
 ## Write Ownership
 

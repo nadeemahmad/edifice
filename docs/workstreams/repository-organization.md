@@ -60,6 +60,9 @@ Resolved during this workstream:
 - CLI command modularization has an explicit design and evidence trigger.
 - Existing dirty work is separated into intentional commits.
 - The fresh-agent orientation exercise passed.
+- Every changed branch path must have registered ownership.
+- Active assignments receive semantic validation against workstream ownership,
+  integration-owned paths, context availability, branch, and revision.
 
 ## Write Ownership
 

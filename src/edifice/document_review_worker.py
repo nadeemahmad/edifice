@@ -74,7 +74,7 @@ def gather_document_review(
                 "Codex returned invalid document-review data."
             ) from error
     review = validate_document_review(payload)
-    _validate_subject(review, review_name, documents)
+    validate_document_review_subject(review, review_name, documents)
     _reject_secret_markers(review)
     return review
 
@@ -251,7 +251,7 @@ def _validate_string_list(value: object, field: str) -> None:
         raise click.ClickException(f"Invalid document-review field: {field}")
 
 
-def _validate_subject(
+def validate_document_review_subject(
     review: dict[str, object],
     review_name: str,
     sources: list[dict[str, object]],

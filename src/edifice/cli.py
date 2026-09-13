@@ -21,11 +21,12 @@ from edifice.adobe_import import (
 )
 from edifice.document_review import (
     add_review_document,
+    find_review_document,
     gather_review,
     get_review_status,
     load_review_manifest,
+    normalize_review_metadata,
     normalize_review_source,
-    review_contains_document,
     review_paths,
     start_review,
     synthesize_review,
@@ -724,16 +725,27 @@ def add_document_review_command(
         local_file, source_reference = copy_pdf
         source_url, markdown_title = normalize_review_source(source_reference)
         title = title if title is not None else markdown_title
-        if review_contains_document(
+        title, source_context = normalize_review_metadata(
+            title=title,
+            context=source_context,
+        )
+        existing_document = find_review_document(
             vault_root=paths.vault_root,
             slug=slug,
             source_url=source_url,
-        ):
+        )
+        existing_local_path = (
+            existing_document.get("local_path")
+            if existing_document is not None
+            else None
+        )
+        if isinstance(existing_local_path, str):
             action, review = add_review_document(
                 vault_root=paths.vault_root,
                 slug=slug,
                 source_url=source_url,
                 kind="local-pdf",
+                local_path=existing_local_path,
                 title=title,
                 context=source_context,
             )

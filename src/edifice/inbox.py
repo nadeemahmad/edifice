@@ -203,6 +203,10 @@ def route_capture(
     normalized_classification = (
         classification.strip().lower() if classification is not None else None
     )
+    if route != "work-idea" and normalized_classification is not None:
+        raise click.ClickException(
+            "Classification is allowed only for work-idea routes."
+        )
     if route == "work-idea" and normalized_classification not in WORK_CLASSIFICATIONS:
         raise click.ClickException(
             "Work ideas require --classification public, "
@@ -246,6 +250,12 @@ def route_capture(
                     route_id=route_id,
                 )
                 if failure is None and capture.checked:
+                    completed_route = record.get("suggested_route")
+                    if completed_route != route:
+                        raise click.ClickException(
+                            "Capture already completed through route "
+                            f"{completed_route}."
+                        )
                     return InboxRouteResult(
                         capture_id=capture_id,
                         destination=destination,
@@ -256,6 +266,10 @@ def route_capture(
                 record["updated_at"] = now.isoformat()
             elif record.get("status") == "archived":
                 if capture.checked:
+                    if route != "archive":
+                        raise click.ClickException(
+                            "Capture already completed through route archive."
+                        )
                     return InboxRouteResult(
                         capture_id=capture_id,
                         destination="archive",

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -15,6 +16,7 @@ from edifice.context_worker import EVIDENCE_STATUSES
 from edifice.document_review_worker import (
     gather_document_review,
     validate_document_review,
+    validate_document_review_subject,
 )
 from edifice.identifiers import new_uuid7
 
@@ -89,11 +91,21 @@ def start_review(
         "status": "active",
         "created_at": now.isoformat(),
         "last_gathered": None,
+        "gathered_manifest_hash": None,
         "documents": [],
     }
-    _write_json(paths.manifest, manifest)
-    _replace_atomically(paths.context_note, _new_context_note(manifest).encode())
-    _replace_atomically(paths.ai_note, _new_ai_note(manifest).encode())
+    manifest_bytes = _json_bytes(manifest)
+    context_bytes = _new_context_note(manifest).encode()
+    ai_bytes = _new_ai_note(manifest).encode()
+    try:
+        _write_new_atomically(paths.manifest, manifest_bytes)
+        _write_new_atomically(paths.context_note, context_bytes)
+        _write_new_atomically(paths.ai_note, ai_bytes)
+    except Exception:
+        _remove_unchanged_file(paths.ai_note, ai_bytes)
+        _remove_unchanged_file(paths.context_note, context_bytes)
+        _remove_unchanged_file(paths.manifest, manifest_bytes)
+        raise
     return slug, paths
 
 
@@ -111,15 +123,9 @@ def add_review_document(
     paths = review_paths(vault_root, _validate_slug(slug))
     manifest = load_review_manifest(paths.manifest)
     url, markdown_title = normalize_review_source(source_url)
-    normalized_title = _normalize_optional_text(
-        title if title is not None else markdown_title,
-        field="Document title",
-        max_length=240,
-    )
-    normalized_context = _normalize_optional_text(
-        context,
-        field="Document context",
-        max_length=2000,
+    normalized_title, normalized_context = normalize_review_metadata(
+        title=title if title is not None else markdown_title,
+        context=context,
     )
     documents = cast(list[object], manifest["documents"])
     for item in documents:
@@ -131,6 +137,20 @@ def add_review_document(
             title=normalized_title,
             context=normalized_context,
         )
+        if local_path is not None:
+            detected_kind = _detect_document_kind(
+                url,
+                kind=kind,
+                local_path=local_path,
+            )
+            if (
+                document.get("kind") != detected_kind
+                or document.get("local_path") != local_path
+            ):
+                document["kind"] = detected_kind
+                document["local_path"] = local_path
+                changed = True
+        _validate_manifest_document(document, paths.manifest)
         if changed:
             manifest["status"] = "active"
         _write_json(paths.manifest, manifest)
@@ -176,11 +196,31 @@ def review_contains_document(
     source_url: str,
 ) -> bool:
     """Return whether a review already contains an authoritative source."""
+    return (
+        find_review_document(
+            vault_root=vault_root,
+            slug=slug,
+            source_url=source_url,
+        )
+        is not None
+    )
+
+
+def find_review_document(
+    *,
+    vault_root: Path,
+    slug: str,
+    source_url: str,
+) -> dict[str, object] | None:
+    """Return the registered document for an authoritative source URL."""
     paths = review_paths(vault_root, _validate_slug(slug))
     manifest = load_review_manifest(paths.manifest)
     url, _ = normalize_review_source(source_url)
     documents = cast(list[dict[str, object]], manifest["documents"])
-    return any(document["source_url"] == url for document in documents)
+    return next(
+        (document for document in documents if document["source_url"] == url),
+        None,
+    )
 
 
 def normalize_review_source(value: str) -> tuple[str, str | None]:
@@ -197,6 +237,26 @@ def normalize_review_source(value: str) -> tuple[str, str | None]:
         label,
         field="Markdown link label",
         max_length=240,
+    )
+
+
+def normalize_review_metadata(
+    *,
+    title: str | None,
+    context: str | None,
+) -> tuple[str | None, str | None]:
+    """Normalize owner-provided review metadata before any dependent write."""
+    return (
+        _normalize_optional_text(
+            title,
+            field="Document title",
+            max_length=240,
+        ),
+        _normalize_optional_text(
+            context,
+            field="Document context",
+            max_length=2000,
+        ),
     )
 
 
@@ -233,6 +293,7 @@ def gather_review(
     )
     now = datetime.now(UTC)
     manifest["last_gathered"] = now.isoformat()
+    manifest["gathered_manifest_hash"] = _analysis_basis_hash(manifest)
     manifest["status"] = "gathered"
     _write_json(paths.manifest, manifest)
     _write_run_report(
@@ -255,14 +316,24 @@ def synthesize_review(*, vault_root: Path, slug: str) -> ReviewPaths:
     paths = review_paths(vault_root, _validate_slug(slug))
     if not paths.latest.is_file():
         raise click.ClickException("Gather the document review before synthesizing.")
+    manifest = load_review_manifest(paths.manifest)
+    if manifest["gathered_manifest_hash"] != _analysis_basis_hash(manifest):
+        raise click.ClickException(
+            "Document review changed after the latest gather. Gather again before "
+            "synthesizing."
+        )
     review = load_review_result(paths.latest)
+    validate_document_review_subject(
+        review,
+        cast(str, manifest["name"]),
+        cast(list[dict[str, object]], manifest["documents"]),
+    )
     _replace_section(
         paths.context_note,
         SYNTHESIS_START,
         SYNTHESIS_END,
         _render_synthesis(review),
     )
-    manifest = load_review_manifest(paths.manifest)
     manifest["status"] = "synthesized"
     _write_json(paths.manifest, manifest)
     return paths
@@ -286,6 +357,7 @@ def get_review_status(*, vault_root: Path, slug: str) -> ReviewStatus:
 def load_review_manifest(path: Path) -> dict[str, object]:
     """Load and validate one review manifest."""
     manifest = _load_json(path)
+    manifest.setdefault("gathered_manifest_hash", None)
     required = {
         "schema_version",
         "review_id",
@@ -296,6 +368,7 @@ def load_review_manifest(path: Path) -> dict[str, object]:
         "status",
         "created_at",
         "last_gathered",
+        "gathered_manifest_hash",
         "documents",
     }
     if set(manifest) != required or manifest.get("schema_version") != 1:
@@ -309,6 +382,8 @@ def load_review_manifest(path: Path) -> dict[str, object]:
         or not isinstance(manifest.get("created_at"), str)
         or manifest.get("last_gathered") is not None
         and not isinstance(manifest.get("last_gathered"), str)
+        or manifest.get("gathered_manifest_hash") is not None
+        and not isinstance(manifest.get("gathered_manifest_hash"), str)
     ):
         raise click.ClickException(f"Invalid document-review manifest: {path}")
     if (
@@ -865,6 +940,27 @@ def _safe_code(value: str) -> str:
     return _safe_inline(value).replace("`", "'")
 
 
+def _analysis_basis_hash(manifest: dict[str, object]) -> str:
+    basis = {
+        key: manifest[key]
+        for key in (
+            "review_id",
+            "slug",
+            "name",
+            "classification",
+            "review_on",
+            "documents",
+        )
+    }
+    encoded = json.dumps(
+        basis,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
 def _load_json(path: Path) -> dict[str, object]:
     try:
         value: object = json.loads(path.read_text(encoding="utf-8"))
@@ -878,12 +974,32 @@ def _load_json(path: Path) -> dict[str, object]:
 
 
 def _write_json(path: Path, value: dict[str, object]) -> None:
-    _replace_atomically(
-        path,
-        (
-            json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-        ).encode(),
-    )
+    _replace_atomically(path, _json_bytes(value))
+
+
+def _json_bytes(value: dict[str, object]) -> bytes:
+    return (
+        json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    ).encode()
+
+
+def _write_new_atomically(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as temporary:
+        temporary.write(content)
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    try:
+        os.link(temporary_path, path)
+    except FileExistsError as error:
+        raise click.ClickException(f"Document review already exists: {path}") from error
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def _replace_atomically(path: Path, content: bytes) -> None:
@@ -902,3 +1018,11 @@ def _replace_atomically(path: Path, content: bytes) -> None:
         os.replace(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)
+
+
+def _remove_unchanged_file(path: Path, expected: bytes) -> None:
+    try:
+        if path.read_bytes() == expected:
+            path.unlink()
+    except OSError:
+        pass

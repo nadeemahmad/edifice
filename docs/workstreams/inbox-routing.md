@@ -19,6 +19,9 @@ without losing their original wording.
   exist locally.
 - The live Inbox has two archived test captures and no unresolved captures.
 - No semantic AI worker participates in routing.
+- Classification is accepted only for work ideas and cannot cross into a
+  personal destination.
+- Completed captures permit only an idempotent retry of the same route.
 
 ## Owned Files
 

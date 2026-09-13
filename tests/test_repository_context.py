@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
@@ -79,3 +80,20 @@ def test_agent_assignment_limits_feature_agent_to_registered_owned_paths() -> No
     assert not set(assignment["writable_paths"]).intersection(
         registry["integration_owned_paths"]
     )
+
+
+def test_every_branch_change_has_registered_ownership() -> None:
+    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "main...HEAD"],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    changed_paths = set(result.stdout.splitlines())
+    registered_paths = set(registry["integration_owned_paths"])
+    for workstream in registry["workstreams"]:
+        registered_paths.update(workstream["owned_paths"])
+
+    assert changed_paths <= registered_paths, sorted(changed_paths - registered_paths)

@@ -43,6 +43,17 @@ verification, or review pass over an implementation workstream.
 Do not rely on a conversational request to widen the assignment. Update the
 durable assignment first.
 
+Validate every active assignment against the actual checkout before dispatch:
+
+```text
+.venv/bin/python -m edifice.agent_assignment ASSIGNMENT.json \
+  --registry docs/workstreams/registry.json \
+  --repository /absolute/path/to/worktree
+```
+
+Dispatch stops when the workstream, context, writable paths, branch, or
+revision does not match the registry and checkout.
+
 ## Worktree And Branch
 
 Create one worktree per writing agent from the verified integration revision:
