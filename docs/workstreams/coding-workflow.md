@@ -261,6 +261,16 @@ failure could lose the thread ID. Implementation resumed:
 - repeated `coding-run.json` failures return a controlled error that points to
   the recovery file rather than losing the task identity.
 
+Independent review of revision
+`668fc4d5ff49f504231900dddf7bdcf1744d34a0` found two final edge cases:
+failure writing the recovery file could still escape without task-aware
+recovery, and repeated project cursors could hold the launch lock indefinitely.
+Implementation resumed:
+
+- recovery-file errors carry the created thread ID so the main run record can
+  still enter `launch-needs-review`;
+- project discovery rejects repeated cursors and more than 100 pages.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.

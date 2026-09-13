@@ -180,13 +180,19 @@ def launch_coding_run(
         _replace_json_atomically(run_path, launching_run)
 
         def record_started_thread(task: CodexTask) -> None:
-            _write_launch_recovery(
-                recovery_path,
-                task=task,
-                model=preview.model,
-                sandbox=preview.sandbox,
-                launch_started_at=launch_started_at,
-            )
+            try:
+                _write_launch_recovery(
+                    recovery_path,
+                    task=task,
+                    model=preview.model,
+                    sandbox=preview.sandbox,
+                    launch_started_at=launch_started_at,
+                )
+            except OSError as error:
+                raise click.ClickException(
+                    f"Cannot write {recovery_path.name} for task "
+                    f"{task.thread_id}: {error}"
+                ) from error
             thread_run = dict(launching_run)
             thread_state = dict(launching_state)
             thread_state.update(
@@ -634,8 +640,13 @@ def _resolve_project(
 ) -> tuple[str, int]:
     request_id = 2
     cursor: str | None = None
+    seen_cursors: set[str] = set()
     matching_projects: set[str] = set()
+    page_count = 0
     while True:
+        page_count += 1
+        if page_count > 100:
+            raise click.ClickException("Codex project list exceeded 100 pages.")
         params: dict[str, object] = {"limit": 100}
         if cursor is not None:
             params["cursor"] = cursor
@@ -667,7 +678,14 @@ def _resolve_project(
             }
             if root_paths.intersection(candidate_roots):
                 matching_projects.add(project_id)
-        cursor = _optional_string(result.get("nextCursor"))
+        next_cursor = _optional_string(result.get("nextCursor"))
+        if next_cursor is not None:
+            if next_cursor in seen_cursors:
+                raise click.ClickException(
+                    f"Codex project list repeated cursor: {next_cursor}"
+                )
+            seen_cursors.add(next_cursor)
+        cursor = next_cursor
         request_id += 1
         if cursor is None:
             break

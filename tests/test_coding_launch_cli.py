@@ -731,6 +731,54 @@ def test_codex_app_launcher_does_not_match_sibling_worktree_project(
         )
 
 
+def test_codex_app_launcher_rejects_repeated_project_cursor(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    responses: list[dict[str, object]] = [
+        {"id": 1, "result": {}},
+        {
+            "id": 2,
+            "result": {
+                "data": [],
+                "nextCursor": "repeat",
+            },
+        },
+        {
+            "id": 3,
+            "result": {
+                "data": [],
+                "nextCursor": "repeat",
+            },
+        },
+    ]
+    process = _FakeAppServerProcess(responses)
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _FakeAppServerProcess:
+        return process
+
+    monkeypatch.setattr(
+        "edifice.coding_launch._start_proxy",
+        start_process,
+    )
+
+    with pytest.raises(
+        CodexLaunchRetryableError,
+        match="Codex project list repeated cursor",
+    ):
+        launch_with_codex_app(
+            codex_binary="codex-test",
+            title="EDIFICE-200: Launch example",
+            repository=tmp_path / "repository",
+            model="gpt-test",
+            sandbox="read-only",
+            prompt="Bounded assignment prompt.",
+        )
+
+
 def test_codex_app_launcher_times_out_when_proxy_stalls(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -1793,3 +1841,81 @@ def test_code_launch_recovery_file_survives_repeated_main_record_failure(
     assert "launch-recovery.json" in result.output
     assert recovery["thread_id"] == "thread-durable"
     assert coding_run["assignment"]["status"] == "launching"
+
+
+def test_code_launch_records_thread_when_recovery_file_write_fails(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+    partial_task = CodexTask(
+        thread_id="thread-recovery-failed",
+        turn_id=None,
+        project_id=None,
+        cwd=None,
+        instruction_sources=(),
+    )
+
+    def launch_with_failed_recovery(**arguments: object) -> object:
+        callback = arguments["on_thread_started"]
+        assert callable(callback)
+        try:
+            callback(partial_task)
+        except click.ClickException as error:
+            raise CodexTaskStartedError(error.message, partial_task) from error
+        raise AssertionError("callback unexpectedly succeeded")
+
+    def fail_recovery_file(
+        _path: Path,
+        **_arguments: object,
+    ) -> None:
+        raise OSError("recovery file unavailable")
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.launch_with_codex_app",
+        launch_with_failed_recovery,
+    )
+    monkeypatch.setattr(
+        "edifice.coding_launch._write_launch_recovery",
+        fail_recovery_file,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+        input="y\n",
+    )
+
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "launch-example"
+        / "coding-run.json"
+    )
+    coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    assignment_state = coding_run["assignment"]
+
+    assert result.exit_code != 0
+    assert "thread-recovery-failed" in result.output
+    assert assignment_state["status"] == "launch-needs-review"
+    assert assignment_state["thread_id"] == "thread-recovery-failed"
