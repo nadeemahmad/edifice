@@ -260,6 +260,11 @@ def start_coding_run(
                 revision=revision,
                 context_paths=context_paths,
             )
+            _require_unchanged_repository(
+                repository_root=repository_root,
+                branch=branch,
+                revision=revision,
+            )
         except click.ClickException:
             if created:
                 _remove_created_run(

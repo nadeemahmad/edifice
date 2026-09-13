@@ -403,6 +403,73 @@ def test_agent_assignment_command_rechecks_context_before_success(
     )
 
 
+def test_agent_assignment_command_rechecks_repository_after_final_context(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assignment = _active_assignment()
+    assignment["branch"] = branch
+    assignment["base_revision"] = revision
+    assignment_path = tmp_path / "assignment.json"
+    assignment_path.write_text(json.dumps(assignment), encoding="utf-8")
+    context_comparison_count = 0
+    revision_changed = False
+
+    def repository_state(_repository_root: Path) -> tuple[str, str, bool]:
+        current_revision = "b" * 40 if revision_changed else revision
+        return branch, current_revision, True
+
+    def context_matches_revision(
+        _repository_root: Path,
+        _revision: str,
+        _context_paths: list[str],
+    ) -> None:
+        nonlocal context_comparison_count, revision_changed
+        context_comparison_count += 1
+        if context_comparison_count == 2:
+            revision_changed = True
+
+    monkeypatch.setattr(
+        "edifice.agent_assignment._repository_state",
+        repository_state,
+    )
+    monkeypatch.setattr(
+        "edifice.agent_assignment.validate_context_matches_revision",
+        context_matches_revision,
+    )
+
+    exit_code = main(
+        [
+            str(assignment_path),
+            "--registry",
+            str(REPOSITORY_ROOT / "docs" / "workstreams" / "registry.json"),
+            "--repository",
+            str(REPOSITORY_ROOT),
+        ]
+    )
+
+    assert exit_code == 1
+    assert (
+        "Invalid assignment: Repository changed during assignment validation."
+        in capsys.readouterr().err
+    )
+
+
 def test_agent_assignment_command_rejects_noncanonical_registry(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

@@ -173,6 +173,15 @@ Implementation resumed:
 - standalone dispatch repeats context-byte validation after its final
   repository snapshot.
 
+Independent review of revision
+`4280d61ca302f34b2d931a2dc9e38111c2dbd8bb` found that a non-context commit
+could land during the final context comparison. Implementation resumed:
+
+- `code start` repeats its coherent repository snapshot after the final
+  context comparison and rolls back a stale new run;
+- standalone dispatch repeats the same snapshot after its final context
+  comparison before reporting success.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.

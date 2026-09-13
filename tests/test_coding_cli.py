@@ -12,7 +12,10 @@ import pytest
 from click.testing import CliRunner
 from pytest import MonkeyPatch
 
-from edifice.agent_assignment import validate_agent_assignment
+from edifice.agent_assignment import (
+    validate_agent_assignment,
+    validate_context_matches_revision,
+)
 from edifice.cli import cli
 
 
@@ -901,6 +904,82 @@ def test_code_start_rolls_back_when_final_repository_snapshot_has_new_revision(
     )
 
     run_path = vault_root / "20-work" / "operations" / "coding-runs" / "revision-race"
+    assert result.exit_code != 0
+    assert "Repository changed while preparing coding run." in result.output
+    assert not run_path.exists()
+
+
+def test_code_start_rechecks_repository_after_final_context_comparison(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    branch = _run_git(repository, "branch", "--show-current")
+    revision = _run_git(repository, "rev-parse", "HEAD")
+    context_comparison_count = 0
+    revision_changed = False
+
+    def repository_state(_repository_root: Path) -> tuple[str, str, bool]:
+        current_revision = "b" * 40 if revision_changed else revision
+        return branch, current_revision, True
+
+    def context_matches_revision(
+        repository_root: Path,
+        expected_revision: str,
+        context_paths: list[str],
+    ) -> None:
+        nonlocal context_comparison_count, revision_changed
+        validate_context_matches_revision(
+            repository_root,
+            expected_revision,
+            context_paths,
+        )
+        context_comparison_count += 1
+        if context_comparison_count == 2:
+            revision_changed = True
+
+    monkeypatch.setattr(
+        "edifice.coding_run._repository_state",
+        repository_state,
+    )
+    monkeypatch.setattr(
+        "edifice.coding_run.validate_context_matches_revision",
+        context_matches_revision,
+    )
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Final context race",
+            "--objective",
+            "Reject a revision change during final context comparison.",
+            "--jira",
+            "EDIFICE-140",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    run_path = (
+        vault_root / "20-work" / "operations" / "coding-runs" / "final-context-race"
+    )
     assert result.exit_code != 0
     assert "Repository changed while preparing coding run." in result.output
     assert not run_path.exists()

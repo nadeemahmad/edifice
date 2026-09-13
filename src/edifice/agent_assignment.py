@@ -85,6 +85,17 @@ def main(argv: list[str] | None = None) -> int:
             revision,
             _require_string_list(validated, "context_paths"),
         )
+        post_context_branch, post_context_revision, post_context_clean = (
+            _repository_state(repository_root)
+        )
+        if (
+            post_context_branch != branch
+            or post_context_revision != revision
+            or not post_context_clean
+        ):
+            raise AssignmentValidationError(
+                "Repository changed during assignment validation."
+            )
     except (AssignmentValidationError, OSError, json.JSONDecodeError) as error:
         print(f"Invalid assignment: {error}", file=sys.stderr)
         return 1
