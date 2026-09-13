@@ -237,24 +237,33 @@ def route_capture(
                 raise click.ClickException(
                     f"Capture changed after routing review: {capture_id}"
                 )
+            status = record.get("status")
             recorded_route = record.get("suggested_route")
-            if (
-                record.get("status") in {"routing", "routing-failed"}
-                and recorded_route in ROUTES
-            ):
+            if recorded_route in ROUTES:
                 if recorded_route != route:
-                    raise click.ClickException(
-                        f"Capture has incomplete route {recorded_route}."
-                    )
+                    if status in {"routed", "archived"}:
+                        raise click.ClickException(
+                            f"Capture already completed through route {recorded_route}."
+                        )
+                    if status in {"routing", "routing-failed"}:
+                        raise click.ClickException(
+                            f"Capture has incomplete route {recorded_route}."
+                        )
                 if (
                     route == "work-idea"
                     and record.get("classification") != normalized_classification
                 ):
-                    raise click.ClickException(
-                        "Capture has incomplete work-idea classification "
-                        f"{record.get('classification')}."
-                    )
-            if record.get("status") == "routed":
+                    if status == "routed":
+                        raise click.ClickException(
+                            "Capture already completed with classification "
+                            f"{record.get('classification')}."
+                        )
+                    if status in {"routing", "routing-failed"}:
+                        raise click.ClickException(
+                            "Capture has incomplete work-idea classification "
+                            f"{record.get('classification')}."
+                        )
+            if status == "routed":
                 destination = record.get("destination")
                 route_id = record.get("route_id")
                 if not isinstance(destination, str):
@@ -273,14 +282,6 @@ def route_capture(
                             "Capture already completed through route "
                             f"{completed_route}."
                         )
-                    if (
-                        route == "work-idea"
-                        and record.get("classification") != normalized_classification
-                    ):
-                        raise click.ClickException(
-                            "Capture already completed with classification "
-                            f"{record.get('classification')}."
-                        )
                     return InboxRouteResult(
                         capture_id=capture_id,
                         destination=destination,
@@ -289,7 +290,7 @@ def route_capture(
                 record["status"] = "routing-failed"
                 record["failure"] = failure or "Source capture is not marked routed."
                 record["updated_at"] = now.isoformat()
-            elif record.get("status") == "archived":
+            elif status == "archived":
                 if capture.checked:
                     if route != "archive":
                         raise click.ClickException(
@@ -312,22 +313,26 @@ def route_capture(
             archive_id = (
                 cast(str, record["route_id"])
                 if record is not None
-                and record.get("status") == "routing-failed"
+                and record.get("status") in {"routing", "routing-failed"}
                 and isinstance(record.get("route_id"), str)
                 else f"archive-{new_uuid7()}"
             )
             records[capture_id] = {
                 "source_hash": source_hash,
-                "status": "archived",
+                "status": "routing",
                 "suggested_route": "archive",
                 "evidence_status": "owner-attested",
                 "destination": None,
                 "route_id": archive_id,
-                "disposition": "archived",
+                "disposition": None,
                 "classification": None,
                 "updated_at": now.isoformat(),
             }
             routing["updated_at"] = now.isoformat()
+            _replace_atomically(
+                routing_path,
+                (json.dumps(routing, indent=2, sort_keys=True) + "\n").encode(),
+            )
             updated_lines = _mark_capture_archived(
                 updated_lines,
                 capture=capture,
@@ -337,6 +342,10 @@ def route_capture(
                 inbox_path,
                 ("\n".join(updated_lines).rstrip() + "\n").encode(),
             )
+            archived_record = cast(dict[str, object], records[capture_id])
+            archived_record["status"] = "archived"
+            archived_record["disposition"] = "archived"
+            archived_record["updated_at"] = now.isoformat()
             _replace_atomically(
                 routing_path,
                 (json.dumps(routing, indent=2, sort_keys=True) + "\n").encode(),

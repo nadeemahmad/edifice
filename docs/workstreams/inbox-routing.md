@@ -25,6 +25,8 @@ without losing their original wording.
 - Interrupted captures must retry the recorded route and classification before
   another disposition can be selected, and the selected destination must not
   change between attempts.
+- Archive writes persist their route binding before changing the Inbox so a
+  failed final ledger write remains recoverable only as archive.
 
 ## Owned Files
 
