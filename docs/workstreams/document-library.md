@@ -3,7 +3,7 @@ id: document-library
 status: active
 mode: implementation
 checkpoint_commit: d602db0
-integration_commit:
+integration_commit: f95960c
 ---
 
 # Document Library
@@ -87,4 +87,10 @@ read version, and verification time.
 
 ## Verification
 
-Run focused document-library tests, then all repository-required checks.
+- Focused project, task, and document tests: `18 passed`.
+- Complete pytest suite: `194 passed`.
+- Ruff check and format check: passed.
+- Strict Pyright: `0 errors`.
+- `git diff --check`: passed.
+- Live `nflx-google` OAuth and metadata-only discovery were verified in a
+  temporary vault before integration.

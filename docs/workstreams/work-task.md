@@ -3,7 +3,7 @@ id: work-task
 status: active
 mode: implementation
 checkpoint_commit: d602db0
-integration_commit:
+integration_commit: d73dbb3
 ---
 
 # Work Projects And Tasks
