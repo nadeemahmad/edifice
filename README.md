@@ -99,10 +99,10 @@ edifice code start \
   --review-on YYYY-MM-DD
 ```
 
-The command requires a clean Git repository on a named branch. It reads the
-registered workstream, derives its writable paths, hashes the required
-repository instructions and owner practices, and records the exact revision.
-It creates:
+The command requires a clean Git repository on a named
+`nahmad/<name>-codex` branch. It reads the registered workstream, derives its
+writable paths, hashes the required repository instructions and owner
+practices, and records the exact revision. It creates:
 
 ```text
 20-work/operations/coding-runs/<run>/coding-run.json

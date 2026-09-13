@@ -265,9 +265,11 @@ def test_code_start_retry_returns_identical_existing_run(
     assert assignment_path.read_bytes() == before_assignment
 
 
-def test_code_start_implementation_mode_receives_registered_write_scope(
+@pytest.mark.parametrize("mode", ["experiment", "implementation"])
+def test_code_start_write_modes_receive_registered_write_scope(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
+    mode: str,
 ) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()
@@ -285,7 +287,7 @@ def test_code_start_implementation_mode_receives_registered_write_scope(
             "code",
             "start",
             "--name",
-            "Implementation scope",
+            f"{mode} scope",
             "--objective",
             "Permit only registered implementation writes.",
             "--jira",
@@ -295,7 +297,7 @@ def test_code_start_implementation_mode_receives_registered_write_scope(
             "--workstream",
             "example",
             "--mode",
-            "implementation",
+            mode,
             "--learning-level",
             "brief",
             "--classification",
@@ -310,7 +312,7 @@ def test_code_start_implementation_mode_receives_registered_write_scope(
         / "20-work"
         / "operations"
         / "coding-runs"
-        / "implementation-scope"
+        / f"{mode}-scope"
         / "coding-run.json"
     )
     coding_run = json.loads(run_path.read_text(encoding="utf-8"))
@@ -797,3 +799,59 @@ def test_code_start_reports_missing_workstream_registry(tmp_path: Path) -> None:
     assert result.exit_code != 0
     assert "Workstream registry is unavailable at revision" in result.output
     assert not vault_root.exists()
+
+
+def test_code_start_rolls_back_when_final_repository_snapshot_has_new_revision(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    original_revision = _run_git(repository, "rev-parse", "HEAD")
+    snapshot_count = 0
+
+    def repository_state(_repository_root: Path) -> tuple[str, str, bool]:
+        nonlocal snapshot_count
+        snapshot_count += 1
+        revision = original_revision if snapshot_count < 4 else "b" * 40
+        return "nahmad/example-codex", revision, True
+
+    monkeypatch.setattr(
+        "edifice.coding_run._repository_state",
+        repository_state,
+        raising=False,
+    )
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Revision race",
+            "--objective",
+            "Reject a new final repository revision.",
+            "--jira",
+            "EDIFICE-135",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    run_path = vault_root / "20-work" / "operations" / "coding-runs" / "revision-race"
+    assert result.exit_code != 0
+    assert "Repository changed while preparing coding run." in result.output
+    assert not run_path.exists()

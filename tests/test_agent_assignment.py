@@ -181,14 +181,17 @@ def test_agent_assignment_command_validates_feature_checkout(
     assignment_path = tmp_path / "assignment.json"
     assignment_path.write_text(json.dumps(assignment), encoding="utf-8")
 
-    def git_value(_repository_root: Path, *arguments: str) -> str:
-        if arguments == ("branch", "--show-current"):
-            return "nahmad/meeting-notes-codex"
-        if arguments == ("rev-parse", "HEAD"):
-            return "a" * 40
-        raise AssertionError(f"Unexpected Git arguments: {arguments}")
+    def clean_repository_state(_repository_root: Path) -> tuple[str, str, bool]:
+        return (
+            "nahmad/meeting-notes-codex",
+            "a" * 40,
+            True,
+        )
 
-    monkeypatch.setattr("edifice.agent_assignment._git_value", git_value)
+    monkeypatch.setattr(
+        "edifice.agent_assignment._repository_state",
+        clean_repository_state,
+    )
 
     exit_code = main(
         [
@@ -202,3 +205,43 @@ def test_agent_assignment_command_validates_feature_checkout(
 
     assert exit_code == 0
     assert "Valid active assignment: meeting-notes" in capsys.readouterr().out
+
+
+def test_agent_assignment_command_rejects_dirty_checkout(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assignment = _active_assignment()
+    assignment["branch"] = "nahmad/meeting-notes-codex"
+    assignment["base_revision"] = "a" * 40
+    assignment_path = tmp_path / "assignment.json"
+    assignment_path.write_text(json.dumps(assignment), encoding="utf-8")
+
+    def dirty_repository_state(_repository_root: Path) -> tuple[str, str, bool]:
+        return (
+            "nahmad/meeting-notes-codex",
+            "a" * 40,
+            False,
+        )
+
+    monkeypatch.setattr(
+        "edifice.agent_assignment._repository_state",
+        dirty_repository_state,
+    )
+
+    exit_code = main(
+        [
+            str(assignment_path),
+            "--registry",
+            str(REPOSITORY_ROOT / "docs" / "workstreams" / "registry.json"),
+            "--repository",
+            str(REPOSITORY_ROOT),
+        ]
+    )
+
+    assert exit_code == 1
+    assert (
+        "Invalid assignment: Repository working tree is not clean."
+        in capsys.readouterr().err
+    )

@@ -49,9 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repository", type=Path, required=True)
     arguments = parser.parse_args(argv)
     repository_root = arguments.repository.resolve()
-    branch = _git_value(repository_root, "branch", "--show-current")
-    revision = _git_value(repository_root, "rev-parse", "HEAD")
+    branch, revision, working_tree_clean = _repository_state(repository_root)
     try:
+        if not working_tree_clean:
+            raise AssignmentValidationError("Repository working tree is not clean.")
         assignment = _load_json(arguments.assignment)
         registry = _load_json(arguments.registry)
         validated = validate_agent_assignment(
@@ -251,15 +252,27 @@ def _load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _git_value(repository_root: Path, *arguments: str) -> str:
+def _repository_state(repository_root: Path) -> tuple[str, str, bool]:
     result = subprocess.run(
-        ["git", *arguments],
+        ["git", "status", "--porcelain=v2", "--branch"],
         cwd=repository_root,
         check=True,
         capture_output=True,
         text=True,
     )
-    return result.stdout.strip()
+    branch = ""
+    revision = ""
+    working_tree_clean = True
+    for line in result.stdout.splitlines():
+        if line.startswith("# branch.head "):
+            branch = line.removeprefix("# branch.head ")
+        elif line.startswith("# branch.oid "):
+            revision = line.removeprefix("# branch.oid ")
+        elif not line.startswith("# "):
+            working_tree_clean = False
+    if branch == "(detached)":
+        branch = ""
+    return branch, revision, working_tree_clean
 
 
 if __name__ == "__main__":

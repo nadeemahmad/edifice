@@ -111,6 +111,17 @@ again:
 - assignment validation now requires empty writable paths for read-only modes;
 - a missing committed workstream registry now produces a controlled CLI error.
 
+Independent review of revision
+`5b5da0ddc1d835dd1f7120b52bbdea95d7e0f289` found that separate final Git
+observations could miss a clean commit and that the standalone assignment
+command accepted dirty worktrees. Implementation resumed:
+
+- coding-run publication and assignment dispatch now read branch, revision,
+  and cleanliness from one Git status snapshot;
+- the assignment command rejects dirty worktrees before validation;
+- write-mode tests cover both `experiment` and `implementation`;
+- the README names the required `nahmad/<name>-codex` branch form.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.

@@ -99,12 +99,10 @@ def start_coding_run(
         )
 
     repository_root = _validate_repository(repository)
-    branch = _git_value(repository_root, "branch", "--show-current")
+    branch, revision, working_tree_clean = _repository_state(repository_root)
     if not branch:
         raise click.ClickException("Repository must be on a named branch.")
-    revision = _git_value(repository_root, "rev-parse", "HEAD")
-    working_tree = _git_value(repository_root, "status", "--porcelain")
-    if working_tree:
+    if not working_tree_clean:
         raise click.ClickException("Repository working tree must be clean.")
 
     try:
@@ -451,16 +449,42 @@ def _git_bytes(repository_root: Path, *arguments: str) -> bytes:
     return result.stdout
 
 
+def _repository_state(repository_root: Path) -> tuple[str, str, bool]:
+    result = subprocess.run(
+        ["git", "status", "--porcelain=v2", "--branch"],
+        cwd=repository_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    branch = ""
+    revision = ""
+    working_tree_clean = True
+    for line in result.stdout.splitlines():
+        if line.startswith("# branch.head "):
+            branch = line.removeprefix("# branch.head ")
+        elif line.startswith("# branch.oid "):
+            revision = line.removeprefix("# branch.oid ")
+        elif not line.startswith("# "):
+            working_tree_clean = False
+    if branch == "(detached)":
+        branch = ""
+    return branch, revision, working_tree_clean
+
+
 def _require_unchanged_repository(
     *,
     repository_root: Path,
     branch: str,
     revision: str,
 ) -> None:
+    current_branch, current_revision, working_tree_clean = _repository_state(
+        repository_root
+    )
     if (
-        _git_value(repository_root, "branch", "--show-current") != branch
-        or _git_value(repository_root, "rev-parse", "HEAD") != revision
-        or _git_value(repository_root, "status", "--porcelain")
+        current_branch != branch
+        or current_revision != revision
+        or not working_tree_clean
     ):
         raise click.ClickException("Repository changed while preparing coding run.")
 
