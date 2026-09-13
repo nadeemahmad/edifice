@@ -1,7 +1,9 @@
 ---
 id: document-review
-status: uncommitted
+status: active
 mode: implementation
+checkpoint_commit: 2eab90f
+integration_commit: 39fa703
 ---
 
 # Document Review

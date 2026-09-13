@@ -1,7 +1,9 @@
 ---
 id: inbox-routing
-status: uncommitted
+status: active
 mode: implementation
+checkpoint_commit: bacd857
+integration_commit: 39fa703
 ---
 
 # Inbox Routing

@@ -1,7 +1,9 @@
 ---
 id: work-task
-status: uncommitted
+status: active
 mode: implementation
+checkpoint_commit: 94a82d2
+integration_commit: 39fa703
 ---
 
 # Context-Free Work Task

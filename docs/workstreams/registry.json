@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "integration_owned_paths": [
+    "README.md",
+    "docs/engineering/owner-practices.md",
+    "src/edifice/cli.py",
+    "src/edifice/context_worker.py",
+    "tests/test_doctor_cli.py",
+    "vault-template/AGENTS.md",
+    "vault-template/00-system/getting-started.md",
+    "vault-template/00-system/operating-manual.md",
+    "vault-template/00-system/schema.md",
+    "vault-template/00-system/work-context-policy.md",
+    "vault-template/00-system/workflows.md",
+    "vault-template/10-personal/notes/AGENTS.md",
+    "vault-template/20-work/home.md"
+  ],
+  "workstreams": [
+    {
+      "id": "document-review",
+      "title": "Document Review",
+      "status": "active",
+      "mode": "implementation",
+      "context": "docs/workstreams/document-review.md",
+      "owned_paths": [
+        "docs/workstreams/document-review.md",
+        "src/edifice/document-review-schema.json",
+        "src/edifice/document_review.py",
+        "src/edifice/document_review_worker.py",
+        "tests/test_document_review_cli.py",
+        "vault-template/00-system/templates/document-review-ai.md",
+        "vault-template/00-system/templates/document-review.md",
+        "vault-template/20-work/references/document-reviews/AGENTS.md"
+      ],
+      "shared_paths": [
+        "README.md",
+        "docs/engineering/owner-practices.md",
+        "src/edifice/cli.py",
+        "src/edifice/context_worker.py",
+        "tests/test_doctor_cli.py",
+        "vault-template/00-system/getting-started.md",
+        "vault-template/00-system/operating-manual.md",
+        "vault-template/00-system/schema.md",
+        "vault-template/00-system/work-context-policy.md",
+        "vault-template/00-system/workflows.md",
+        "vault-template/20-work/home.md"
+      ],
+      "dependencies": [
+        "governed-work-context",
+        "work-pdf-catalog"
+      ]
+    },
+    {
+      "id": "work-task",
+      "title": "Context-Free Work Task",
+      "status": "active",
+      "mode": "implementation",
+      "context": "docs/workstreams/work-task.md",
+      "owned_paths": [
+        "docs/workstreams/work-task.md",
+        "src/edifice/work_task.py",
+        "tests/test_task_cli.py"
+      ],
+      "shared_paths": [
+        "README.md",
+        "src/edifice/cli.py",
+        "vault-template/00-system/getting-started.md",
+        "vault-template/00-system/operating-manual.md",
+        "vault-template/00-system/workflows.md",
+        "vault-template/20-work/home.md"
+      ],
+      "dependencies": [
+        "current-work-pointer",
+        "governed-work-context"
+      ]
+    },
+    {
+      "id": "inbox-routing",
+      "title": "Inbox Routing",
+      "status": "active",
+      "mode": "implementation",
+      "context": "docs/workstreams/inbox-routing.md",
+      "owned_paths": [
+        "docs/workstreams/inbox-routing.md",
+        "src/edifice/inbox.py",
+        "tests/test_inbox_cli.py"
+      ],
+      "shared_paths": [
+        "README.md",
+        "src/edifice/cli.py",
+        "vault-template/00-system/getting-started.md",
+        "vault-template/00-system/operating-manual.md",
+        "vault-template/00-system/schema.md",
+        "vault-template/00-system/workflows.md"
+      ],
+      "dependencies": [
+        "canonical-inbox",
+        "current-work-pointer"
+      ]
+    },
+    {
+      "id": "meeting-notes",
+      "title": "Meeting Notes",
+      "status": "active",
+      "mode": "implementation",
+      "context": "docs/workstreams/meeting-notes.md",
+      "owned_paths": [
+        "docs/workstreams/meeting-notes.md",
+        "src/edifice/meeting_note.py",
+        "tests/test_meeting_cli.py",
+        "vault-template/20-work/notes/AGENTS.md"
+      ],
+      "shared_paths": [
+        "README.md",
+        "src/edifice/cli.py",
+        "vault-template/AGENTS.md",
+        "vault-template/00-system/getting-started.md",
+        "vault-template/00-system/operating-manual.md",
+        "vault-template/00-system/schema.md",
+        "vault-template/00-system/workflows.md",
+        "vault-template/10-personal/notes/AGENTS.md",
+        "vault-template/20-work/home.md"
+      ],
+      "dependencies": [
+        "human-note-ownership",
+        "governed-work-context"
+      ]
+    },
+    {
+      "id": "coding-workflow",
+      "title": "Coding Workflow",
+      "status": "designed",
+      "mode": "design",
+      "context": "docs/workstreams/coding-workflow.md",
+      "owned_paths": [
+        "docs/workstreams/coding-workflow.md"
+      ],
+      "shared_paths": [
+        "README.md",
+        "src/edifice/cli.py",
+        "vault-template/00-system/engineering/owner-practices.md",
+        "vault-template/00-system/operating-manual.md",
+        "vault-template/00-system/schema.md",
+        "vault-template/00-system/workflows.md"
+      ],
+      "dependencies": [
+        "repository-organization",
+        "owner-practices",
+        "context-gathering"
+      ]
+    },
+    {
+      "id": "repository-organization",
+      "title": "Repository Organization",
+      "status": "active",
+      "mode": "implementation",
+      "context": "docs/workstreams/repository-organization.md",
+      "owned_paths": [
+        "AGENTS.md",
+        "docs/agent-context.md",
+        "docs/workstreams/README.md",
+        "docs/workstreams/registry.json",
+        "docs/workstreams/registry.schema.json",
+        "docs/workstreams/repository-organization.md",
+        "tests/test_repository_context.py"
+      ],
+      "shared_paths": [],
+      "dependencies": [
+        "owner-practices",
+        "workstream-separation"
+      ]
+    }
+  ]
+}

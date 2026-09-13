@@ -1,7 +1,9 @@
 ---
 id: meeting-notes
-status: uncommitted
+status: active
 mode: implementation
+checkpoint_commit: e3c3d35
+integration_commit: 39fa703
 ---
 
 # Meeting Notes
