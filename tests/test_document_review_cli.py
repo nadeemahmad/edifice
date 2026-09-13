@@ -1129,6 +1129,120 @@ def test_review_docs_synthesize_rejects_result_after_manifest_changes(
     assert "The documents agree on the core design." not in context_note
 
 
+def test_review_docs_synthesize_rejects_result_from_failed_refresh(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "start",
+                "--name",
+                "Architecture review",
+                "--classification",
+                "netflix-internal",
+                "--review-on",
+                "2026-09-15",
+            ],
+        ).exit_code
+        == 0
+    )
+    for url in (
+        "https://docs.google.com/document/d/one",
+        "https://docs.google.com/document/d/two",
+    ):
+        assert (
+            runner.invoke(
+                cli,
+                [
+                    *_base_arguments(vault_root, audit_root),
+                    "review-docs",
+                    "add",
+                    "architecture-review",
+                    "--link",
+                    url,
+                ],
+            ).exit_code
+            == 0
+        )
+    fake_codex, invocation_log = _create_fake_codex(tmp_path)
+    environment = {
+        "EDIFICE_CODEX_BIN": str(fake_codex),
+        "EDIFICE_FAKE_CODEX_LOG": str(invocation_log),
+        "EDIFICE_FAKE_CODEX_RESPONSE": json.dumps(
+            _review_result("Initial successful result.")
+        ),
+    }
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, audit_root),
+                "review-docs",
+                "gather",
+                "architecture-review",
+            ],
+            env=environment,
+        ).exit_code
+        == 0
+    )
+    context_note_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "projects"
+        / "architecture-review-document-review.md"
+    )
+    original_replace = os.replace
+
+    def fail_context_replace(source: str | Path, target: str | Path) -> None:
+        if Path(target) == context_note_path:
+            raise PermissionError("Context note write failed")
+        original_replace(source, target)
+
+    monkeypatch.setattr("edifice.document_review.os.replace", fail_context_replace)
+    failed_environment = {
+        **environment,
+        "EDIFICE_FAKE_CODEX_RESPONSE": json.dumps(
+            _review_result("Result from failed refresh.")
+        ),
+    }
+    failed_refresh = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "review-docs",
+            "gather",
+            "architecture-review",
+        ],
+        env=failed_environment,
+    )
+    assert failed_refresh.exit_code != 0
+    monkeypatch.setattr("edifice.document_review.os.replace", original_replace)
+
+    synthesized = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "review-docs",
+            "synthesize",
+            "architecture-review",
+        ],
+    )
+
+    assert synthesized.exit_code != 0
+    assert "Latest document-review result was not committed" in synthesized.output
+    assert "Result from failed refresh." not in context_note_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_review_docs_status_reports_persistent_session_state(tmp_path: Path) -> None:
     vault_root = tmp_path / "vault"
     audit_root = tmp_path / "audit"

@@ -367,6 +367,15 @@ def route_capture(
         )
         target_relative_path = target_path.relative_to(vault_root)
         destination = f"{target_relative_path.as_posix()}#{anchor}"
+        if (
+            record is not None
+            and record.get("status") in {"routing", "routing-failed"}
+            and isinstance(record.get("destination"), str)
+            and record["destination"] != destination
+        ):
+            raise click.ClickException(
+                f"Capture has incomplete destination {record['destination']}."
+            )
         route_id = (
             cast(str, record["route_id"])
             if record is not None

@@ -23,7 +23,8 @@ without losing their original wording.
   personal destination.
 - Completed captures permit only an idempotent retry of the same route.
 - Interrupted captures must retry the recorded route and classification before
-  another disposition can be selected.
+  another disposition can be selected, and the selected destination must not
+  change between attempts.
 
 ## Owned Files
 

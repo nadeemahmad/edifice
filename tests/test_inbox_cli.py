@@ -916,6 +916,124 @@ def test_inbox_route_rejects_different_destination_after_interrupted_route(
     assert work_path.read_text(encoding="utf-8").count("Keep this work note.") == 1
 
 
+def test_inbox_route_rejects_changed_pointer_after_interrupted_route(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    inbox_path = vault_root / "01-inbox" / "inbox.md"
+    inbox_path.parent.mkdir(parents=True)
+    inbox_path.write_text(
+        "# Inbox\n\n- [ ] Keep this work note.\n",
+        encoding="utf-8",
+    )
+    first_relative_path = Path("20-work/operations/projects/first-work.md")
+    second_relative_path = Path("20-work/operations/projects/second-work.md")
+    for relative_path in (first_relative_path, second_relative_path):
+        path = vault_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            """# Current work
+
+## Manual context
+
+### Notes
+
+### Questions
+
+## Tasks
+""",
+            encoding="utf-8",
+        )
+    current_path = vault_root / "00-system" / "current.json"
+    current_path.parent.mkdir(parents=True)
+    current_path.write_text(
+        json.dumps({"work": first_relative_path.as_posix()}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "edifice.inbox._now",
+        lambda: datetime(2026, 9, 13, 16, 0, tzinfo=UTC),
+    )
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, tmp_path / "audit"),
+                "inbox",
+                "process",
+            ],
+        ).exit_code
+        == 0
+    )
+    capture_match = re.search(
+        r"\^(capture-[0-9a-f-]{36})",
+        inbox_path.read_text(encoding="utf-8"),
+    )
+    assert capture_match is not None
+    capture_id = capture_match.group(1)
+    original_replace = os.replace
+
+    def fail_inbox_replace(source: str | Path, target: str | Path) -> None:
+        if Path(target) == inbox_path:
+            raise PermissionError("Inbox write interrupted")
+        original_replace(source, target)
+
+    monkeypatch.setattr("edifice.inbox.os.replace", fail_inbox_replace)
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, tmp_path / "audit"),
+                "inbox",
+                "route",
+                capture_id,
+                "--to",
+                "current-work-note",
+            ],
+        ).exit_code
+        != 0
+    )
+    monkeypatch.setattr("edifice.inbox.os.replace", original_replace)
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *_base_arguments(vault_root, tmp_path / "audit"),
+                "inbox",
+                "process",
+            ],
+        ).exit_code
+        == 0
+    )
+    current_path.write_text(
+        json.dumps({"work": second_relative_path.as_posix()}),
+        encoding="utf-8",
+    )
+
+    retried = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "inbox",
+            "route",
+            capture_id,
+            "--to",
+            "current-work-note",
+        ],
+    )
+
+    assert retried.exit_code != 0
+    assert "Capture has incomplete destination" in retried.output
+    assert (vault_root / first_relative_path).read_text(encoding="utf-8").count(
+        "Keep this work note."
+    ) == 1
+    assert (vault_root / second_relative_path).read_text(encoding="utf-8").count(
+        "Keep this work note."
+    ) == 0
+
+
 def test_inbox_route_rejects_work_idea_classification_change_on_retry(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,

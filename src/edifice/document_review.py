@@ -92,6 +92,7 @@ def start_review(
         "created_at": now.isoformat(),
         "last_gathered": None,
         "gathered_manifest_hash": None,
+        "gathered_result_hash": None,
         "documents": [],
     }
     manifest_bytes = _json_bytes(manifest)
@@ -311,10 +312,6 @@ def gather_review(
         _render_sources(documents, review),
     )
     now = datetime.now(UTC)
-    manifest["last_gathered"] = now.isoformat()
-    manifest["gathered_manifest_hash"] = _analysis_basis_hash(manifest)
-    manifest["status"] = "gathered"
-    _write_json(paths.manifest, manifest)
     _write_run_report(
         vault_root=vault_root,
         slug=cast(str, manifest["slug"]),
@@ -327,6 +324,11 @@ def gather_review(
         review_id=cast(str, manifest["review_id"]),
         document_count=len(documents),
     )
+    manifest["last_gathered"] = now.isoformat()
+    manifest["gathered_manifest_hash"] = _analysis_basis_hash(manifest)
+    manifest["gathered_result_hash"] = _review_result_hash(review)
+    manifest["status"] = "gathered"
+    _write_json(paths.manifest, manifest)
     return paths
 
 
@@ -342,6 +344,10 @@ def synthesize_review(*, vault_root: Path, slug: str) -> ReviewPaths:
             "synthesizing."
         )
     review = load_review_result(paths.latest)
+    if manifest["gathered_result_hash"] != _review_result_hash(review):
+        raise click.ClickException(
+            "Latest document-review result was not committed by a successful gather."
+        )
     validate_document_review_subject(
         review,
         cast(str, manifest["name"]),
@@ -377,6 +383,7 @@ def load_review_manifest(path: Path) -> dict[str, object]:
     """Load and validate one review manifest."""
     manifest = _load_json(path)
     manifest.setdefault("gathered_manifest_hash", None)
+    manifest.setdefault("gathered_result_hash", None)
     required = {
         "schema_version",
         "review_id",
@@ -388,6 +395,7 @@ def load_review_manifest(path: Path) -> dict[str, object]:
         "created_at",
         "last_gathered",
         "gathered_manifest_hash",
+        "gathered_result_hash",
         "documents",
     }
     if set(manifest) != required or manifest.get("schema_version") != 1:
@@ -403,6 +411,8 @@ def load_review_manifest(path: Path) -> dict[str, object]:
         and not isinstance(manifest.get("last_gathered"), str)
         or manifest.get("gathered_manifest_hash") is not None
         and not isinstance(manifest.get("gathered_manifest_hash"), str)
+        or manifest.get("gathered_result_hash") is not None
+        and not isinstance(manifest.get("gathered_result_hash"), str)
     ):
         raise click.ClickException(f"Invalid document-review manifest: {path}")
     if (
@@ -973,6 +983,16 @@ def _analysis_basis_hash(manifest: dict[str, object]) -> str:
     }
     encoded = json.dumps(
         basis,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _review_result_hash(review: dict[str, object]) -> str:
+    encoded = json.dumps(
+        review,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,

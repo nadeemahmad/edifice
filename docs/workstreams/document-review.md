@@ -21,6 +21,8 @@ mutation.
 - The implementation predates the work-task, Inbox, and meeting-note changes.
 - Synthesis is bound to the gathered manifest and revalidates document
   identity before publication.
+- Synthesis also requires the exact result hash committed by a successful
+  gather.
 - Review creation rolls back partial files, and PDF metadata is validated
   before ingestion.
 - New-source capacity is checked before PDF ingestion.
