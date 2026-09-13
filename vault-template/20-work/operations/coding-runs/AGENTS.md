@@ -7,3 +7,5 @@
 - Do not launch an agent or mutate an external system from a run record alone.
 - Keep assignment previews local until their branch, revision, context, and write
   scope pass validation.
+- Launch only through the confirmed coding command. Preserve returned Codex task
+  identity even when verification or opening-turn creation fails.

@@ -21,8 +21,11 @@ reviewable closeout without unauthorized external mutation.
   storage on 2026-09-13.
 - `edifice code start` creates a durable coding-run record and validated active
   assignment preview without launching an agent or contacting JIRA.
-- Automatic routing, agent launch, playbook qualification, evidence updates,
-  JIRA verification, PR drafting, and external mutation remain unavailable.
+- `edifice code launch` previews and confirms one persistent Codex task through
+  the local app-server daemon, then records its task identity.
+- Automatic routing, playbook qualification, checkpoint capture, JIRA
+  verification, PR drafting, and unrelated external mutation remain
+  unavailable.
 
 ## Intended Work Modes
 
@@ -39,9 +42,11 @@ reviewable closeout without unauthorized external mutation.
 - `docs/engineering/agent-assignment.example.json`
 - `docs/workstreams/coding-workflow.md`
 - `src/edifice/agent_assignment.py`
+- `src/edifice/coding_launch.py`
 - `src/edifice/coding_run.py`
 - `src/edifice/coding-run-schema.json`
 - `tests/test_agent_assignment.py`
+- `tests/test_coding_launch_cli.py`
 - `tests/test_coding_cli.py`
 - `vault-template/20-work/operations/coding-runs/AGENTS.md`
 
@@ -182,11 +187,27 @@ could land during the final context comparison. Implementation resumed:
 - standalone dispatch repeats the same snapshot after its final context
   comparison before reporting success.
 
+Launch implementation evidence:
+
+- Red: no launch module or dry-run command existed.
+- Green: dry-run previews task, project inference, worktree, model, and sandbox
+  without contacting Codex or changing the run.
+- Red: confirmed launch had no durable task metadata path.
+- Green: verified thread, turn, project, worktree, model, and instruction
+  sources are written atomically.
+- Red: the app-server adapter and stale-assignment gate did not exist.
+- Green: protocol tests cover initialize, thread creation, naming, opening
+  turn, notifications, and exact pre-launch validation.
+- Red: retries contacted launch preparation, and failed project verification
+  discarded task identity.
+- Green: retries return the recorded task, while mismatched or partial tasks
+  enter `launch-needs-review` with recovery metadata.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.
-- Context hashes prove which instructions the starter read. No agent-load
-  acknowledgement exists because this slice does not launch an agent.
+- App-server instruction sources are recorded, but full agent context
+  acknowledgement and checkpoint capture remain unavailable.
 - JIRA syntax is validated, but issue title, URL, and status remain unverified.
 - Mode transitions and TDD, verification, review, closeout, and PR-draft
   evidence updates remain manual future slices.
@@ -194,6 +215,8 @@ could land during the final context comparison. Implementation resumed:
 - The coding-run JSON schema is not executed by a general schema validator.
   Behavior tests check the generated record directly, so schema drift remains
   a minor review risk.
+- The app-server adapter is protocol-tested with deterministic fakes. A live
+  Codex project-placement trial remains pending exact owner approval.
 
 ## Write Ownership
 

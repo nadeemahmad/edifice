@@ -100,10 +100,15 @@ Tasks remain Markdown checkboxes in the note that owns their context.
   branch and revision, registered writable paths, and hashes for loaded
   repository context.
 - JIRA evidence begins as `pending-verification`.
+- Assignment launch state is `not-launched`, `launched`, or
+  `launch-needs-review`. Launched records include runtime, model, thread, turn,
+  project, worktree, launch time, and instruction sources.
 - Empty design, TDD, verification, review, closeout, and PR-draft evidence
   lists do not prove that a gate has passed.
 - Retrying the same run preserves the original records. Conflicting reuse of a
   run name fails.
+- Retrying launch returns the recorded task. Partial or mismatched task
+  creation preserves recovery metadata instead of claiming success.
 
 ## Meeting note ownership
 

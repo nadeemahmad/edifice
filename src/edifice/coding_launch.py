@@ -1,0 +1,552 @@
+"""Launch governed coding runs into persistent Codex tasks."""
+
+import fcntl
+import json
+import os
+import re
+import subprocess
+import tempfile
+from collections.abc import Generator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import cast
+
+import click
+
+from edifice.agent_assignment import (
+    AssignmentValidationError,
+    validate_agent_assignment,
+)
+from edifice.coding_run import CODING_RUN_DIRECTORY, READ_ONLY_MODES
+
+RUN_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+@dataclass(frozen=True)
+class CodingLaunchPreview:
+    slug: str
+    title: str
+    repository: Path
+    model: str
+    sandbox: str
+    thread_id: str | None
+    project_id: str | None
+
+
+@dataclass(frozen=True)
+class CodexTask:
+    thread_id: str
+    turn_id: str
+    project_id: str
+    cwd: Path
+    instruction_sources: tuple[Path, ...]
+
+
+class CodexTaskStartedError(click.ClickException):
+    """A Codex thread exists but launch did not complete."""
+
+    def __init__(self, message: str, task: CodexTask) -> None:
+        super().__init__(message)
+        self.task = task
+
+
+@dataclass(frozen=True)
+class CodingLaunchResult:
+    thread_id: str
+    project_id: str
+
+
+def prepare_coding_launch(
+    *,
+    vault_root: Path,
+    slug: str,
+    model: str,
+) -> CodingLaunchPreview:
+    """Load one coding run and derive its Codex launch parameters."""
+    normalized_slug = slug.strip().lower()
+    if not RUN_SLUG_PATTERN.fullmatch(normalized_slug):
+        raise click.ClickException(f"Invalid coding run: {slug}")
+    normalized_model = model.strip()
+    if not normalized_model:
+        raise click.ClickException("Model must not be empty.")
+
+    run_path = vault_root / CODING_RUN_DIRECTORY / normalized_slug / "coding-run.json"
+    coding_run = _load_mapping(run_path, "coding run")
+    assignment = _require_mapping(coding_run.get("assignment"), "assignment")
+    status = assignment.get("status")
+    if status == "launched":
+        thread_id = _require_string(assignment, "thread_id")
+        project_id = _require_string(assignment, "project_id")
+    elif status == "not-launched":
+        thread_id = None
+        project_id = None
+    else:
+        raise click.ClickException(f"Coding run is already launched: {normalized_slug}")
+    repository_data = _require_mapping(coding_run.get("repository"), "repository")
+    repository = Path(_require_string(repository_data, "path"))
+    jira = _require_mapping(coding_run.get("jira"), "jira")
+    title = f"{_require_string(jira, 'key')}: {_require_string(coding_run, 'name')}"
+    mode = _require_string(coding_run, "active_mode")
+    sandbox = "read-only" if mode in READ_ONLY_MODES else "workspace-write"
+    return CodingLaunchPreview(
+        slug=normalized_slug,
+        title=title,
+        repository=repository,
+        model=normalized_model,
+        sandbox=sandbox,
+        thread_id=thread_id,
+        project_id=project_id,
+    )
+
+
+def launch_coding_run(
+    *,
+    vault_root: Path,
+    audit_root: Path,
+    slug: str,
+    model: str,
+    codex_binary: str,
+) -> CodingLaunchResult:
+    """Launch one validated run and record the returned Codex task."""
+    preview = prepare_coding_launch(
+        vault_root=vault_root,
+        slug=slug,
+        model=model,
+    )
+    run_directory = vault_root / CODING_RUN_DIRECTORY / preview.slug
+    run_path = run_directory / "coding-run.json"
+    assignment_path = run_directory / "agent-assignment.preview.json"
+    with _launch_lock(audit_root):
+        coding_run = _load_mapping(run_path, "coding run")
+        assignment_state = _require_mapping(
+            coding_run.get("assignment"),
+            "assignment",
+        )
+        if assignment_state.get("status") != "not-launched":
+            thread_id = _require_string(assignment_state, "thread_id")
+            project_id = _require_string(assignment_state, "project_id")
+            return CodingLaunchResult(
+                thread_id=thread_id,
+                project_id=project_id,
+            )
+        assignment = _load_mapping(assignment_path, "agent assignment")
+        _validate_launch_assignment(
+            coding_run=coding_run,
+            assignment=assignment,
+            repository=preview.repository,
+        )
+        try:
+            task = launch_with_codex_app(
+                codex_binary=codex_binary,
+                title=preview.title,
+                repository=preview.repository,
+                model=preview.model,
+                sandbox=preview.sandbox,
+                prompt=_launch_prompt(assignment),
+            )
+        except CodexTaskStartedError as error:
+            updated_run = dict(coding_run)
+            failed_state = _task_state(
+                task=error.task,
+                model=preview.model,
+                status="launch-needs-review",
+            )
+            failed_state["launch_error"] = error.message
+            updated_run["assignment"] = failed_state
+            _replace_json_atomically(run_path, updated_run)
+            raise click.ClickException(
+                f"{error.message} Recorded task {error.task.thread_id} for recovery."
+            ) from error
+        try:
+            _validate_task(task, preview.repository)
+        except click.ClickException as error:
+            updated_run = dict(coding_run)
+            failed_state = _task_state(
+                task=task,
+                model=preview.model,
+                status="launch-needs-review",
+            )
+            failed_state["launch_error"] = error.message
+            updated_run["assignment"] = failed_state
+            _replace_json_atomically(run_path, updated_run)
+            raise click.ClickException(
+                f"{error.message} Recorded task {task.thread_id} for recovery."
+            ) from error
+        updated_run = dict(coding_run)
+        updated_run["assignment"] = _task_state(
+            task=task,
+            model=preview.model,
+            status="launched",
+        )
+        _replace_json_atomically(run_path, updated_run)
+    return CodingLaunchResult(
+        thread_id=task.thread_id,
+        project_id=task.project_id,
+    )
+
+
+def _task_state(
+    *,
+    task: CodexTask,
+    model: str,
+    status: str,
+) -> dict[str, object]:
+    return {
+        "status": status,
+        "path": "agent-assignment.preview.json",
+        "runtime": "codex-app-server",
+        "model": model,
+        "thread_id": task.thread_id,
+        "turn_id": task.turn_id,
+        "project_id": task.project_id,
+        "cwd": str(task.cwd),
+        "launched_at": _now(),
+        "instruction_sources": [str(path) for path in task.instruction_sources],
+    }
+
+
+def _validate_launch_assignment(
+    *,
+    coding_run: dict[str, object],
+    assignment: dict[str, object],
+    repository: Path,
+) -> None:
+    repository_data = _require_mapping(coding_run.get("repository"), "repository")
+    expected_branch = _require_string(repository_data, "branch")
+    expected_revision = _require_string(repository_data, "revision")
+    branch, revision, working_tree_clean = _repository_state(repository)
+    if (
+        branch != expected_branch
+        or revision != expected_revision
+        or not working_tree_clean
+    ):
+        raise click.ClickException(
+            "Repository changed since coding run: "
+            f"expected {expected_branch}@{expected_revision}."
+        )
+    try:
+        registry_result = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{expected_revision}:docs/workstreams/registry.json",
+            ],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        registry: object = json.loads(registry_result.stdout)
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=registry,
+            repository_root=repository,
+            expected_branch=expected_branch,
+            expected_revision=expected_revision,
+        )
+    except (
+        OSError,
+        subprocess.CalledProcessError,
+        json.JSONDecodeError,
+        AssignmentValidationError,
+    ) as error:
+        raise click.ClickException(
+            f"Cannot validate coding assignment: {error}"
+        ) from error
+    final_branch, final_revision, final_working_tree_clean = _repository_state(
+        repository
+    )
+    if (
+        final_branch != expected_branch
+        or final_revision != expected_revision
+        or not final_working_tree_clean
+    ):
+        raise click.ClickException(
+            "Repository changed during coding launch validation."
+        )
+
+
+def _repository_state(repository: Path) -> tuple[str, str, bool]:
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain=v2", "--branch"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise click.ClickException(
+            f"Cannot inspect repository: {repository}"
+        ) from error
+    branch = ""
+    revision = ""
+    working_tree_clean = True
+    for line in result.stdout.splitlines():
+        if line.startswith("# branch.head "):
+            branch = line.removeprefix("# branch.head ")
+        elif line.startswith("# branch.oid "):
+            revision = line.removeprefix("# branch.oid ")
+        elif not line.startswith("# "):
+            working_tree_clean = False
+    if branch == "(detached)":
+        branch = ""
+    return branch, revision, working_tree_clean
+
+
+def launch_with_codex_app(
+    *,
+    codex_binary: str,
+    title: str,
+    repository: Path,
+    model: str,
+    sandbox: str,
+    prompt: str,
+) -> CodexTask:
+    """Launch through the persistent Codex app-server daemon."""
+    try:
+        process = subprocess.Popen(
+            [codex_binary, "app-server", "proxy"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+    except OSError as error:
+        raise click.ClickException(
+            f"Cannot start Codex app-server proxy: {error}"
+        ) from error
+    if process.stdin is None or process.stdout is None or process.stderr is None:
+        process.terminate()
+        raise click.ClickException("Codex app-server proxy has unavailable streams.")
+
+    try:
+        _rpc_request(
+            process,
+            request_id=1,
+            method="initialize",
+            params={
+                "clientInfo": {
+                    "name": "edifice",
+                    "title": "Edifice",
+                    "version": "0.1.0",
+                }
+            },
+        )
+        _write_message(process, {"method": "initialized"})
+        thread_result = _rpc_request(
+            process,
+            request_id=2,
+            method="thread/start",
+            params={
+                "approvalPolicy": "on-request",
+                "cwd": str(repository),
+                "ephemeral": False,
+                "model": model,
+                "sandbox": sandbox,
+            },
+        )
+        thread = _require_mapping(thread_result.get("thread"), "Codex thread")
+        thread_id = _require_string(thread, "id")
+        project_id = _require_string(thread, "projectId")
+        cwd = Path(_require_string(thread, "cwd"))
+        instruction_sources = _path_tuple(
+            thread_result.get("instructionSources"),
+            "instructionSources",
+        )
+        partial_task = CodexTask(
+            thread_id=thread_id,
+            turn_id="",
+            project_id=project_id,
+            cwd=cwd,
+            instruction_sources=instruction_sources,
+        )
+        try:
+            _rpc_request(
+                process,
+                request_id=3,
+                method="thread/name/set",
+                params={
+                    "name": title,
+                    "threadId": thread_id,
+                },
+            )
+            turn_result = _rpc_request(
+                process,
+                request_id=4,
+                method="turn/start",
+                params={
+                    "input": [{"type": "text", "text": prompt}],
+                    "threadId": thread_id,
+                },
+            )
+        except click.ClickException as error:
+            raise CodexTaskStartedError(error.message, partial_task) from error
+        turn = _require_mapping(turn_result.get("turn"), "Codex turn")
+        turn_id = _require_string(turn, "id")
+        return CodexTask(
+            thread_id=thread_id,
+            turn_id=turn_id,
+            project_id=project_id,
+            cwd=cwd,
+            instruction_sources=instruction_sources,
+        )
+    finally:
+        process.stdin.close()
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def _rpc_request(
+    process: subprocess.Popen[str],
+    *,
+    request_id: int,
+    method: str,
+    params: dict[str, object],
+) -> dict[str, object]:
+    _write_message(
+        process,
+        {
+            "id": request_id,
+            "method": method,
+            "params": params,
+        },
+    )
+    assert process.stdout is not None
+    assert process.stderr is not None
+    while True:
+        line = process.stdout.readline()
+        if not line:
+            error_output = process.stderr.read().strip()
+            detail = f": {error_output}" if error_output else ""
+            raise click.ClickException(
+                f"Codex app-server proxy closed during {method}{detail}"
+            )
+        try:
+            response: object = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise click.ClickException(
+                f"Codex app-server returned invalid JSON during {method}."
+            ) from error
+        message = _require_mapping(response, "Codex app-server response")
+        if message.get("id") != request_id:
+            continue
+        if "error" in message:
+            raise click.ClickException(
+                f"Codex app-server rejected {method}: {message['error']}"
+            )
+        return _require_mapping(message.get("result"), f"{method} result")
+
+
+def _write_message(
+    process: subprocess.Popen[str],
+    message: dict[str, object],
+) -> None:
+    assert process.stdin is not None
+    process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
+    process.stdin.flush()
+
+
+def _path_tuple(value: object, field: str) -> tuple[Path, ...]:
+    if not isinstance(value, list):
+        raise click.ClickException(f"Codex task field must be a list: {field}")
+    paths: list[Path] = []
+    for item in cast(list[object], value):
+        if not isinstance(item, str) or not item:
+            raise click.ClickException(f"Codex task list must contain paths: {field}")
+        paths.append(Path(item))
+    return tuple(paths)
+
+
+def _launch_prompt(assignment: dict[str, object]) -> str:
+    encoded_assignment = json.dumps(assignment, indent=2, sort_keys=True)
+    return f"""Start this governed coding task.
+
+Treat the assignment below as the durable authority for objective, mode,
+learning level, context, writable paths, checks, prohibited effects, and
+completion criteria. Do not widen it from conversation history.
+
+At startup, report the assignment ID, workstream, exact revision, mode,
+learning level, writable paths, prohibited effects, focused baseline result,
+and any contradiction in the supplied context.
+
+```json
+{encoded_assignment}
+```
+"""
+
+
+def _validate_task(task: CodexTask, repository: Path) -> None:
+    if not task.thread_id.strip():
+        raise click.ClickException("Codex returned an empty thread ID.")
+    if not task.turn_id.strip():
+        raise click.ClickException("Codex returned an empty turn ID.")
+    if not task.project_id.strip():
+        raise click.ClickException("Codex did not assign the task to a project.")
+    if task.cwd.resolve() != repository.resolve():
+        raise click.ClickException(
+            f"Codex task worktree mismatch: expected {repository}, got {task.cwd}"
+        )
+
+
+def _load_mapping(path: Path, label: str) -> dict[str, object]:
+    try:
+        value: object = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise click.ClickException(f"Cannot read {label}: {path}") from error
+    return _require_mapping(value, label)
+
+
+def _require_mapping(value: object, label: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise click.ClickException(f"{label.capitalize()} must be a JSON object.")
+    return cast(dict[str, object], value)
+
+
+def _require_string(mapping: dict[str, object], field: str) -> str:
+    value = mapping.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise click.ClickException(f"Coding run field must be text: {field}")
+    return value
+
+
+def _replace_json_atomically(path: Path, value: dict[str, object]) -> None:
+    content = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as temporary:
+        temporary.write(content)
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    try:
+        temporary_path.chmod(path.stat().st_mode)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _now() -> str:
+    return datetime.now().astimezone().isoformat()
+
+
+@contextmanager
+def _launch_lock(audit_root: Path) -> Generator[None]:
+    audit_root.mkdir(parents=True, exist_ok=True)
+    lock_path = audit_root / "code-launch.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)

@@ -39,6 +39,7 @@ Owner-facing commands:
 - `edifice review-docs status`
 - `edifice context gather`
 - `edifice code start`
+- `edifice code launch`
 - `edifice pdf add`
 - `edifice pdf inventory`
 - `edifice pdf backup-personal`
@@ -73,7 +74,8 @@ Owner-facing commands:
   owner-editable.
 - Coding runs record the exact repository revision, work mode, learning level,
   instruction hashes, registered writable paths, and pending evidence gates.
-  Starting a run does not launch an agent or verify JIRA.
+  Starting a run does not launch an agent or verify JIRA. Launching requires a
+  separate confirmed command and records the returned Codex task identity.
 - Authoritative links and PDF links are preferred. A local PDF copy requires an
   explicit command, source URL, classification, and matching SHA-256.
 - Personal and work PDF bytes remain in separate local directories and

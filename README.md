@@ -39,6 +39,7 @@ edifice code start --name RUN --objective OBJECTIVE --jira KEY \
   --repo /absolute/repository/path --workstream WORKSTREAM \
   --mode design --learning-level understand \
   --classification netflix-internal --review-on YYYY-MM-DD
+edifice code launch RUN --model MODEL
 edifice pdf add /absolute/path/document.pdf \
   --scope personal --classification personal
 edifice pdf inventory
@@ -112,6 +113,29 @@ practices, and records the exact revision. It creates:
 JIRA remains authoritative. This first slice validates only the issue-key
 syntax and records JIRA verification as pending. It does not launch an agent,
 modify the target repository, contact an external system, or publish a PR.
+
+Preview a Codex task launch without contacting Codex:
+
+```text
+edifice --dry-run code launch RUN --model MODEL
+```
+
+Launch after reviewing the project, worktree, model, sandbox, and task title:
+
+```text
+edifice code launch RUN --model MODEL
+```
+
+The command revalidates the exact assignment and repository, then requires
+confirmation. It connects to the running Codex app-server daemon, creates a
+persistent task from the recorded worktree, names it, starts the opening turn,
+and records the returned thread, turn, project, model, worktree, and loaded
+instruction sources. Repeating the command returns the recorded task.
+
+If Codex creates a task that fails project or worktree verification, or creates
+a thread but cannot start its opening turn, Edifice records
+`launch-needs-review` with the available task identity before returning an
+error.
 
 ## Meeting notes
 

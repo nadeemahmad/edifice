@@ -18,6 +18,7 @@ created: 2026-09-07
 - `edifice review-docs` creates and operates reusable document reviews.
 - `edifice context gather` creates or refreshes bounded work context.
 - `edifice code start` creates a coding-run record and assignment preview.
+- `edifice code launch` creates a confirmed persistent Codex task.
 - `edifice pdf add` copies and catalogs one intentionally selected PDF.
 - `edifice pdf inventory` verifies both local PDF catalogs.
 - `edifice pdf backup-personal` reconciles every personal PDF to the configured
@@ -125,16 +126,19 @@ For recurring meetings:
    primary mode, and learning level.
 2. Run `edifice code start` from a clean named branch.
 3. Inspect the durable coding-run record and active assignment preview.
-4. Treat JIRA as unverified until an approved read-only workflow records its
+4. Preview launch with `edifice --dry-run code launch RUN --model MODEL`.
+5. Launch only after confirming the project, worktree, model, sandbox, and
+   task title.
+6. Treat JIRA as unverified until an approved read-only workflow records its
    exact title and URL.
-5. Accept a lightweight design before material implementation.
-6. Record behavior changes through test-first vertical slices.
-7. Verify the exact final revision before independent findings-first review.
-8. Prepare a PR description from verified evidence, but do not publish without
+7. Accept a lightweight design before material implementation.
+8. Record behavior changes through test-first vertical slices.
+9. Verify the exact final revision before independent findings-first review.
+10. Prepare a PR description from verified evidence, but do not publish without
    owner approval.
-9. Keep mode changes and evidence updates manual until later slices implement
+11. Keep mode changes and evidence updates manual until later slices implement
    explicit commands.
-10. Do not infer agent launch, JIRA access, repository mutation, review, or
+12. Do not infer JIRA access, repository mutation, review, or
     publication from the existence of a run record.
 
 ## Document review

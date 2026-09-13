@@ -20,6 +20,7 @@ from edifice.adobe_import import (
     plan_adobe_import,
 )
 from edifice.agent_assignment import ALLOWED_LEARNING_LEVELS, ALLOWED_MODES
+from edifice.coding_launch import launch_coding_run, prepare_coding_launch
 from edifice.coding_run import start_coding_run
 from edifice.document_review import (
     add_review_document,
@@ -571,6 +572,47 @@ def start_code_command(
     click.echo(f"Run: {result.run_path}.")
     click.echo(f"Assignment preview: {result.assignment_path}.")
     click.echo("No agent launched and no external system contacted.")
+
+
+@code_command.command("launch")
+@click.argument("slug")
+@click.option("--model", required=True)
+@click.pass_obj
+def launch_code_command(
+    paths: RuntimePaths,
+    slug: str,
+    model: str,
+) -> None:
+    """Launch a governed coding run into a persistent Codex task."""
+    preview = prepare_coding_launch(
+        vault_root=paths.vault_root,
+        slug=slug,
+        model=model,
+    )
+    if preview.thread_id is not None and preview.project_id is not None:
+        click.echo(f"Existing Codex task: {preview.thread_id}.")
+        click.echo(f"Project ID: {preview.project_id}.")
+        return
+    click.echo(f"Task: {preview.title}.")
+    click.echo(f"Project: inferred by Codex from {preview.repository}.")
+    click.echo(f"Worktree: {preview.repository}.")
+    click.echo(f"Model: {preview.model}.")
+    click.echo(f"Sandbox: {preview.sandbox}.")
+    if paths.dry_run:
+        click.echo("Dry run: no Codex task created.")
+        return
+    if not click.confirm("Launch this Codex task?", default=False):
+        click.echo("Launch canceled.")
+        return
+    result = launch_coding_run(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        slug=slug,
+        model=model,
+        codex_binary=os.environ.get("EDIFICE_CODEX_BIN", "codex"),
+    )
+    click.echo(f"Launched Codex task: {result.thread_id}.")
+    click.echo(f"Project ID: {result.project_id}.")
 
 
 @cli.group("meeting")

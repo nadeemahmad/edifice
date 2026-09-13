@@ -295,14 +295,83 @@
           "enum": [
             "not-launched",
             "launched",
+            "launch-needs-review",
             "complete",
             "blocked"
           ]
         },
         "path": {
           "const": "agent-assignment.preview.json"
+        },
+        "runtime": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "launched_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "instruction_sources": {
+          "$ref": "#/$defs/string_list"
+        },
+        "launch_error": {
+          "type": "string"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "launched",
+                  "launch-needs-review"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "runtime",
+              "model",
+              "thread_id",
+              "turn_id",
+              "project_id",
+              "cwd",
+              "launched_at",
+              "instruction_sources"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "launch-needs-review"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "launch_error"
+            ]
+          }
+        }
+      ]
     }
   },
   "$defs": {
