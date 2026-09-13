@@ -24,6 +24,7 @@ from edifice.agent_assignment import (
     AssignmentValidationError,
     governing_instruction_paths,
     validate_agent_assignment,
+    validate_context_matches_revision,
 )
 
 CODING_RUN_DIRECTORY = Path("20-work/operations/coding-runs")
@@ -232,6 +233,11 @@ def start_coding_run(
             branch=branch,
             revision=revision,
         )
+        _require_matching_context(
+            repository_root=repository_root,
+            revision=revision,
+            context_paths=context_paths,
+        )
         run_directory = vault_root / run_relative_path.parent
         if review_on < created_at.astimezone().date() and not run_directory.exists():
             raise click.ClickException(
@@ -248,6 +254,11 @@ def start_coding_run(
                 repository_root=repository_root,
                 branch=branch,
                 revision=revision,
+            )
+            _require_matching_context(
+                repository_root=repository_root,
+                revision=revision,
+                context_paths=context_paths,
             )
         except click.ClickException:
             if created:
@@ -494,6 +505,22 @@ def _require_unchanged_repository(
         or not working_tree_clean
     ):
         raise click.ClickException("Repository changed while preparing coding run.")
+
+
+def _require_matching_context(
+    *,
+    repository_root: Path,
+    revision: str,
+    context_paths: list[str],
+) -> None:
+    try:
+        validate_context_matches_revision(
+            repository_root,
+            revision,
+            context_paths,
+        )
+    except AssignmentValidationError as error:
+        raise click.ClickException(str(error)) from error
 
 
 def _load_mapping(path: Path, label: str) -> dict[str, object]:

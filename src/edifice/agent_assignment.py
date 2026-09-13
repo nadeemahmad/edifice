@@ -80,6 +80,11 @@ def main(argv: list[str] | None = None) -> int:
             raise AssignmentValidationError(
                 "Repository changed during assignment validation."
             )
+        validate_context_matches_revision(
+            repository_root,
+            revision,
+            _require_string_list(validated, "context_paths"),
+        )
     except (AssignmentValidationError, OSError, json.JSONDecodeError) as error:
         print(f"Invalid assignment: {error}", file=sys.stderr)
         return 1
@@ -226,6 +231,11 @@ def validate_agent_assignment(
             raise AssignmentValidationError(
                 f"Assignment context path is unavailable: {path}"
             )
+    validate_context_matches_revision(
+        repository_root,
+        base_revision,
+        context_paths,
+    )
     return typed_assignment
 
 
@@ -256,6 +266,31 @@ def governing_instruction_paths(
             if instruction_path.as_posix() in committed_paths:
                 instruction_paths.add(instruction_path.as_posix())
     return sorted(instruction_paths)
+
+
+def validate_context_matches_revision(
+    repository_root: Path,
+    revision: str,
+    context_paths: list[str],
+) -> None:
+    """Require working context bytes to match the recorded Git revision."""
+    for path in context_paths:
+        try:
+            result = subprocess.run(
+                ["git", "show", f"{revision}:{path}"],
+                cwd=repository_root,
+                check=True,
+                capture_output=True,
+            )
+            working_content = (repository_root / path).read_bytes()
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise AssignmentValidationError(
+                f"Cannot compare repository context at revision {revision}: {path}"
+            ) from error
+        if working_content != result.stdout:
+            raise AssignmentValidationError(
+                f"Repository context differs from revision: {path}"
+            )
 
 
 def _require_mapping(value: object, message: str) -> dict[str, object]:

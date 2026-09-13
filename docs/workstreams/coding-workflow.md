@@ -161,6 +161,18 @@ Implementation resumed:
 - `docs/agent-context.md` ownership moved to `coding-workflow` to match this
   branch's change attribution.
 
+Independent review of revision
+`968183905ed1a421e99ca79069ee66668985683b` found that an
+`assume-unchanged` context file could retain its path but change its bytes.
+Implementation resumed:
+
+- assignment validation compares every working context file with its bytes at
+  the recorded revision;
+- `code start` repeats that comparison inside the run lock before and after
+  publication;
+- standalone dispatch repeats context-byte validation after its final
+  repository snapshot.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.

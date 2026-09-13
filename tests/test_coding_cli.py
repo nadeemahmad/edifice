@@ -702,7 +702,7 @@ def test_code_start_rejects_repository_change_during_context_preparation(
     )
 
     assert result.exit_code != 0
-    assert "Repository changed while preparing coding run." in result.output
+    assert "Repository context differs from revision: AGENTS.md" in result.output
     assert not vault_root.exists()
 
 
@@ -945,6 +945,51 @@ def test_code_start_requires_committed_instruction_hidden_from_worktree(
 
     assert result.exit_code != 0
     assert "Required repository context is missing: src/AGENTS.md" in result.output
+    assert not vault_root.exists()
+
+
+def test_code_start_rejects_committed_instruction_modified_assume_unchanged(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    _run_git(repository, "update-index", "--assume-unchanged", "src/AGENTS.md")
+    (repository / "src" / "AGENTS.md").write_text(
+        "# Different working instructions\n",
+        encoding="utf-8",
+    )
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Modified instruction",
+            "--objective",
+            "Reject context bytes outside the recorded revision.",
+            "--jira",
+            "EDIFICE-139",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Repository context differs from revision: src/AGENTS.md" in result.output
     assert not vault_root.exists()
 
 

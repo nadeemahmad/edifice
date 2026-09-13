@@ -336,6 +336,73 @@ def test_agent_assignment_command_rechecks_repository_before_success(
     )
 
 
+def test_agent_assignment_command_rechecks_context_before_success(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assignment = _active_assignment()
+    assignment["branch"] = branch
+    assignment["base_revision"] = revision
+    assignment_path = tmp_path / "assignment.json"
+    assignment_path.write_text(json.dumps(assignment), encoding="utf-8")
+    comparison_count = 0
+
+    def clean_repository_state(_repository_root: Path) -> tuple[str, str, bool]:
+        return branch, revision, True
+
+    def changing_context(
+        _repository_root: Path,
+        _revision: str,
+        _context_paths: list[str],
+    ) -> None:
+        nonlocal comparison_count
+        comparison_count += 1
+        if comparison_count == 2:
+            raise AssignmentValidationError(
+                "Repository context differs from revision: AGENTS.md"
+            )
+
+    monkeypatch.setattr(
+        "edifice.agent_assignment.validate_context_matches_revision",
+        changing_context,
+    )
+    monkeypatch.setattr(
+        "edifice.agent_assignment._repository_state",
+        clean_repository_state,
+    )
+
+    exit_code = main(
+        [
+            str(assignment_path),
+            "--registry",
+            str(REPOSITORY_ROOT / "docs" / "workstreams" / "registry.json"),
+            "--repository",
+            str(REPOSITORY_ROOT),
+        ]
+    )
+
+    assert exit_code == 1
+    assert (
+        "Invalid assignment: Repository context differs from revision: AGENTS.md"
+        in capsys.readouterr().err
+    )
+
+
 def test_agent_assignment_command_rejects_noncanonical_registry(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -574,6 +641,100 @@ def test_agent_assignment_requires_committed_instruction_hidden_from_worktree(
     with pytest.raises(
         AssignmentValidationError,
         match="Assignment is missing governing instructions.*src/AGENTS.md",
+    ):
+        validate_agent_assignment(
+            assignment=assignment,
+            registry=registry,
+            repository_root=repository,
+        )
+
+
+def test_agent_assignment_rejects_committed_instruction_modified_assume_unchanged(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    context_paths = [
+        "AGENTS.md",
+        "docs/agent-context.md",
+        "docs/engineering/owner-practices.md",
+        "docs/workstreams/example.md",
+        "src/AGENTS.md",
+    ]
+    for relative_path in [*context_paths, "src/example.py"]:
+        path = repository / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Content\n", encoding="utf-8")
+    registry: dict[str, object] = {
+        "schema_version": 1,
+        "integration_owned_paths": [],
+        "workstreams": [
+            {
+                "id": "example",
+                "context": "docs/workstreams/example.md",
+                "owned_paths": ["src/example.py"],
+            }
+        ],
+    }
+    subprocess.run(
+        ["git", "init", "-b", "nahmad/example-codex"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial repository"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "update-index", "--assume-unchanged", "src/AGENTS.md"],
+        cwd=repository,
+        check=True,
+    )
+    (repository / "src" / "AGENTS.md").write_text(
+        "# Different working instructions\n",
+        encoding="utf-8",
+    )
+    assignment = {
+        "schema_version": 1,
+        "assignment_kind": "active",
+        "assignment_id": "modified-instruction",
+        "workstream": "example",
+        "mode": "implementation",
+        "learning_level": "brief",
+        "base_revision": revision,
+        "branch": "nahmad/example-codex",
+        "worktree": str(repository),
+        "objective": "Reject modified instructions.",
+        "context_paths": context_paths,
+        "writable_paths": ["src/example.py"],
+        "required_checks": ["pytest"],
+        "prohibited_effects": ["No external mutation."],
+        "completion_criteria": ["Validation passes."],
+    }
+
+    with pytest.raises(
+        AssignmentValidationError,
+        match="Repository context differs from revision: src/AGENTS.md",
     ):
         validate_agent_assignment(
             assignment=assignment,
