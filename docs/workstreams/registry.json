@@ -11,6 +11,7 @@
     "vault-template/00-system/getting-started.md",
     "vault-template/00-system/operating-manual.md",
     "vault-template/00-system/schema.md",
+    "vault-template/00-system/templates/project.md",
     "vault-template/00-system/work-context-policy.md",
     "vault-template/00-system/workflows.md",
     "vault-template/10-personal/notes/AGENTS.md",
