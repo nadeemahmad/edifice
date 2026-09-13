@@ -30,7 +30,15 @@ Owner-facing commands:
 - `edifice meeting start`
 - `edifice meeting series create`
 - `edifice meeting series start`
+- `edifice project start`
+- `edifice project list`
+- `edifice project select`
+- `edifice project status`
+- `edifice project mark`
 - `edifice task start`
+- `edifice task add`
+- `edifice task list`
+- `edifice task complete`
 - `edifice review-docs start`
 - `edifice review-docs add`
 - `edifice review-docs gather`
@@ -68,6 +76,8 @@ Owner-facing commands:
   boundary selected by the owner.
 - Recurring meeting manifests maintain local series identity and history.
   Calendar remains authoritative for recurrence and reminders.
+- Work projects and child tasks use stable IDs in local indexes. One registered
+  project is selected through `00-system/current.json`.
 - Document reviews use persistent manifests, separate manual and AI notes,
   refreshable generated sections, and read-only source access.
 - Context refresh replaces only marked generated blocks. Manual context remains

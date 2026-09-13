@@ -29,19 +29,38 @@ edifice work
 
 Opens the project selected in `00-system/current.json`.
 
-## Start work without context
+## Start a work project
 
 ```text
-edifice task start \
-  --name "Investigate evaluation failures" \
+edifice project start \
+  --name "Evaluation reliability" \
+  --scope work \
   --classification netflix-internal \
   --review-on YYYY-MM-DD
 ```
 
-This creates a local task under `20-work/operations/projects` and selects it
+This creates a registered project under `20-work/operations/projects` and selects it
 for `edifice work`. No JIRA issue, repository, document, or external access is
 required. Add notes, links, PDFs, decisions, and questions under
 `Manual context`.
+
+Add and manage stable child tasks:
+
+```text
+edifice task add "Investigate evaluation failures" \
+  --project evaluation-reliability
+edifice task list --project evaluation-reliability
+edifice task complete TASK_ID
+```
+
+Use `edifice project list`, `select`, `status`, and `mark` to move among open
+projects. `edifice task start` remains a compatibility alias for project
+creation.
+
+Use `--scope personal` for personal projects. Tasks use the selected project
+when `--project` is omitted. Create an unassigned task with
+`--no-project --scope SCOPE`, then use `task assign`, `reassign`, `unassign`, or
+`auto-assign`.
 
 ## Capture meeting notes
 

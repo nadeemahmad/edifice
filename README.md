@@ -24,8 +24,19 @@ edifice meeting start --title MEETING --scope work \
 edifice meeting series create --title SERIES --scope work \
   --classification netflix-internal
 edifice meeting series start SERIES
-edifice task start --name TASK \
+edifice project start --name PROJECT --scope work \
   --classification netflix-internal --review-on YYYY-MM-DD
+edifice project list
+edifice project select PROJECT
+edifice project status PROJECT
+edifice project mark PROJECT --status active
+edifice task add "TASK" [--project PROJECT | --no-project --scope SCOPE]
+edifice task list --project PROJECT
+edifice task complete TASK_ID
+edifice task assign TASK_ID --project PROJECT
+edifice task reassign TASK_ID --project PROJECT
+edifice task unassign TASK_ID
+edifice task auto-assign TASK_ID [--apply]
 edifice review-docs start --name REVIEW \
   --classification netflix-internal --review-on YYYY-MM-DD
 edifice review-docs add REVIEW --link DOCUMENT_URL
@@ -65,23 +76,38 @@ edifice inbox process
 edifice inbox route CAPTURE_ID --to current-work-note
 ```
 
-## Work tasks
+## Work projects and tasks
 
-Start a local work task before JIRA, repository, or document context is
+Start a durable work project before JIRA, repository, or document context is
 available:
 
 ```text
-edifice task start \
-  --name "Investigate evaluation failures" \
+edifice project start \
+  --name "Evaluation reliability" \
+  --scope work \
   --classification netflix-internal \
   --review-on YYYY-MM-DD
 ```
 
 The command creates and selects
-`20-work/operations/projects/investigate-evaluation-failures.md`. It records
+`20-work/operations/projects/evaluation-reliability.md`. It records
 the missing external context as `unavailable` or `not-applicable`, leaves
 manual sections for notes and references, and makes `edifice work` open the
-new task. It never contacts an external system.
+project. Add stable child tasks with:
+
+```text
+edifice task add "Investigate evaluation failures" \
+  --project evaluation-reliability
+```
+
+Projects and tasks receive stable IDs in local indexes. `edifice task start`
+remains a compatibility alias for creating and selecting a project. These
+commands never contact an external system.
+
+Personal projects use `--scope personal` and receive the `personal`
+classification automatically. A task without `--project` uses the selected
+project. Use `--no-project --scope personal|work` for an unassigned task, then
+assign, reassign, unassign, or conservatively auto-assign it later.
 
 ## Coding runs
 

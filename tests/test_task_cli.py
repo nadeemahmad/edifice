@@ -1,6 +1,8 @@
 import json
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
+from typing import cast
 
 from click.testing import CliRunner
 from pytest import MonkeyPatch
@@ -226,12 +228,20 @@ def test_task_start_removes_new_note_when_current_pointer_update_fails(
     current_path = _create_current_pointer(vault_root)
     before_current = current_path.read_bytes()
     monkeypatch.setattr("edifice.work_task._today", lambda: date(2026, 9, 8))
+    from edifice import work_project
 
-    def fail_pointer_update(_target: Path, _content: bytes) -> None:
-        raise PermissionError("pointer is read-only")
+    replace_atomically = cast(
+        Callable[[Path, bytes], None],
+        work_project.__dict__["_replace"],
+    )
+
+    def fail_pointer_update(target: Path, content: bytes) -> None:
+        if target == current_path:
+            raise PermissionError("pointer is read-only")
+        replace_atomically(target, content)
 
     monkeypatch.setattr(
-        "edifice.work_task._replace_atomically",
+        "edifice.work_project._replace",
         fail_pointer_update,
     )
 
@@ -255,3 +265,281 @@ def test_task_start_removes_new_note_when_current_pointer_update_fails(
         vault_root / "20-work" / "operations" / "projects" / "rollback-task.md"
     ).exists()
     assert current_path.read_bytes() == before_current
+
+
+def test_task_add_list_and_complete_preserve_project_relationship(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    _create_current_pointer(vault_root)
+    monkeypatch.setattr("edifice.work_project._today", lambda: date(2026, 9, 13))
+    runner = CliRunner()
+    base = _base_arguments(vault_root, audit_root)
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *base,
+                "project",
+                "start",
+                "--name",
+                "Document intelligence",
+                "--classification",
+                "netflix-internal",
+                "--review-on",
+                "2026-10-01",
+            ],
+        ).exit_code
+        == 0
+    )
+
+    added = runner.invoke(
+        cli,
+        [
+            *base,
+            "task",
+            "add",
+            "Review architecture memo",
+            "--project",
+            "document-intelligence",
+        ],
+        catch_exceptions=False,
+    )
+    assert added.exit_code == 0, added.output
+    task_id = added.output.split("Created task: ", 1)[1].split(".", 1)[0]
+    listed = runner.invoke(
+        cli,
+        [*base, "task", "list", "--project", "document-intelligence"],
+    )
+    completed = runner.invoke(
+        cli,
+        [*base, "task", "complete", task_id],
+    )
+
+    task_index = json.loads(
+        (vault_root / "20-work" / "operations" / "tasks" / "index.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    project_index = json.loads(
+        (vault_root / "20-work" / "operations" / "projects" / "index.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    project = next(iter(project_index["projects"].values()))
+    task = task_index["tasks"][task_id]
+    note = (vault_root / project["note_path"]).read_text(encoding="utf-8")
+
+    assert task_id.startswith("task-")
+    assert listed.output == (
+        f"{task_id} | open | document-intelligence | Review architecture memo\n"
+    )
+    assert completed.exit_code == 0
+    assert completed.output == f"Completed task: {task_id}.\n"
+    assert task["project_id"] == project["project_id"]
+    assert task["status"] == "completed"
+    assert f"- [x] Review architecture memo ^{task_id}" in note
+
+
+def test_task_creation_supports_current_project_and_explicit_unassigned_scope(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    _create_current_pointer(vault_root)
+    monkeypatch.setattr("edifice.work_project._today", lambda: date(2026, 9, 13))
+    runner = CliRunner()
+    base = _base_arguments(vault_root, audit_root)
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *base,
+                "project",
+                "start",
+                "--name",
+                "Document intelligence",
+                "--classification",
+                "netflix-internal",
+                "--review-on",
+                "2026-10-01",
+            ],
+        ).exit_code
+        == 0
+    )
+
+    automatic = runner.invoke(
+        cli,
+        [*base, "task", "add", "Review architecture memo"],
+    )
+    unassigned = runner.invoke(
+        cli,
+        [
+            *base,
+            "task",
+            "add",
+            "Organize books",
+            "--scope",
+            "personal",
+            "--no-project",
+        ],
+    )
+
+    work_index = json.loads(
+        (vault_root / "20-work/operations/tasks/index.json").read_text()
+    )
+    personal_index = json.loads(
+        (vault_root / "10-personal/operations/tasks/index.json").read_text()
+    )
+    work_task = next(iter(work_index["tasks"].values()))
+    personal_task = next(iter(personal_index["tasks"].values()))
+
+    assert automatic.exit_code == 0
+    assert "Assignment: current project document-intelligence." in automatic.output
+    assert work_task["project_id"] is not None
+    assert work_task["assignment_history"][0]["reason"] == "current-project"
+    assert unassigned.exit_code == 0
+    assert "Assignment: none (personal)." in unassigned.output
+    assert personal_task["project_id"] is None
+    assert (vault_root / "10-personal/operations/tasks/inbox.md").read_text().count(
+        "Organize books"
+    ) == 1
+
+
+def test_task_assign_reassign_and_unassign_preserve_identity_and_history(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    _create_current_pointer(vault_root)
+    monkeypatch.setattr("edifice.work_project._today", lambda: date(2026, 9, 13))
+    runner = CliRunner()
+    base = _base_arguments(vault_root, audit_root)
+    for name in ("Document intelligence", "Model gateway"):
+        assert (
+            runner.invoke(
+                cli,
+                [
+                    *base,
+                    "project",
+                    "start",
+                    "--name",
+                    name,
+                    "--classification",
+                    "netflix-internal",
+                    "--review-on",
+                    "2026-10-01",
+                ],
+            ).exit_code
+            == 0
+        )
+    created = runner.invoke(
+        cli,
+        [
+            *base,
+            "task",
+            "add",
+            "Review architecture memo",
+            "--scope",
+            "work",
+            "--no-project",
+        ],
+    )
+    task_id = created.output.split("Created task: ", 1)[1].split(".", 1)[0]
+
+    assigned = runner.invoke(
+        cli,
+        [*base, "task", "assign", task_id, "--project", "document-intelligence"],
+    )
+    reassigned = runner.invoke(
+        cli,
+        [*base, "task", "reassign", task_id, "--project", "model-gateway"],
+    )
+    unassigned = runner.invoke(cli, [*base, "task", "unassign", task_id])
+
+    index = json.loads((vault_root / "20-work/operations/tasks/index.json").read_text())
+    task = index["tasks"][task_id]
+    project_index = json.loads(
+        (vault_root / "20-work/operations/projects/index.json").read_text()
+    )
+    notes = {
+        project["slug"]: (vault_root / project["note_path"]).read_text()
+        for project in project_index["projects"].values()
+    }
+
+    assert assigned.exit_code == 0
+    assert reassigned.exit_code == 0
+    assert unassigned.exit_code == 0
+    assert task["project_id"] is None
+    assert len(task["assignment_history"]) == 3
+    assert [entry["reason"] for entry in task["assignment_history"]] == [
+        "explicit",
+        "reassigned",
+        "unassigned",
+    ]
+    assert task_id not in notes["document-intelligence"]
+    assert task_id not in notes["model-gateway"]
+    assert task_id in (vault_root / "20-work/operations/tasks/inbox.md").read_text()
+
+
+def test_task_auto_assign_previews_and_applies_unique_title_match(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    _create_current_pointer(vault_root)
+    monkeypatch.setattr("edifice.work_project._today", lambda: date(2026, 9, 13))
+    runner = CliRunner()
+    base = _base_arguments(vault_root, audit_root)
+    assert (
+        runner.invoke(
+            cli,
+            [
+                *base,
+                "project",
+                "start",
+                "--name",
+                "Document intelligence",
+                "--classification",
+                "netflix-internal",
+                "--review-on",
+                "2026-10-01",
+            ],
+        ).exit_code
+        == 0
+    )
+    created = runner.invoke(
+        cli,
+        [
+            *base,
+            "task",
+            "add",
+            "Draft document intelligence design",
+            "--scope",
+            "work",
+            "--no-project",
+        ],
+    )
+    task_id = created.output.split("Created task: ", 1)[1].split(".", 1)[0]
+
+    preview = runner.invoke(cli, [*base, "task", "auto-assign", task_id])
+    applied = runner.invoke(
+        cli,
+        [*base, "task", "auto-assign", task_id, "--apply"],
+    )
+
+    assert preview.exit_code == 0
+    assert preview.output == (
+        f"{task_id} -> document-intelligence "
+        "(matching terms: document, intelligence). Preview only.\n"
+    )
+    assert applied.exit_code == 0
+    assert applied.output == (
+        f"{task_id} -> document-intelligence "
+        "(matching terms: document, intelligence). Assigned.\n"
+    )

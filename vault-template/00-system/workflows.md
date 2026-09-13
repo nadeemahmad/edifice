@@ -14,7 +14,9 @@ created: 2026-09-07
 - `edifice meeting start` creates and opens a human-owned meeting note.
 - `edifice meeting series create` creates a recurring meeting series.
 - `edifice meeting series start` creates its next dated occurrence.
-- `edifice task start` creates and selects a task without external context.
+- `edifice project` creates, lists, selects, and marks durable work projects.
+- `edifice task` creates and completes stable child tasks. `task start`
+  remains a project-creation compatibility alias.
 - `edifice review-docs` creates and operates reusable document reviews.
 - `edifice context gather` creates or refreshes bounded work context.
 - `edifice code start` creates a coding-run record and assignment preview.
@@ -59,18 +61,27 @@ created: 2026-09-07
 11. Re-run processing to detect missing destinations or incomplete routing.
 12. Never discard a capture silently.
 
-## Work task
+## Work projects and tasks
 
-1. Run `edifice task start --name NAME --classification CLASSIFICATION
+1. Run `edifice project start --name NAME --classification CLASSIFICATION
    --review-on YYYY-MM-DD`.
-2. Edifice creates a local project note and selects it as the current work
-   item.
-3. Define the result and first action in the note.
-4. Add manual notes, links, PDFs, decisions, and questions as they become
+2. Choose `--scope work` or `--scope personal`. Work projects require a work
+   classification; personal projects use `personal`.
+3. Edifice registers a stable project ID, creates its note, and selects it.
+4. Add child work with `edifice task add TEXT`. It uses the selected project.
+5. Use `--project PROJECT` for an explicit assignment or
+   `--no-project --scope SCOPE` for an unassigned task.
+6. Reassign with `task assign` or `task reassign`; move back to the scoped
+   inbox with `task unassign`.
+7. `task auto-assign` previews a unique project-title match. `--apply` records
+   it; ambiguous tasks remain unassigned.
+8. Use `project list`, `select`, `status`, and `mark` to manage open projects.
+9. Define the result and resume point in the project note.
+10. Add manual notes, links, PDFs, decisions, and questions as they become
    available.
-5. Gather external context separately when the task acquires an authoritative
+11. Gather external context separately when the project acquires an authoritative
    JIRA issue and repository.
-6. Run `edifice work` to resume the selected task.
+12. Run `edifice work` to resume the selected project.
 
 ## Meeting notes
 
