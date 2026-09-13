@@ -4,6 +4,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
+    "assignment_kind",
     "assignment_id",
     "workstream",
     "mode",
@@ -21,6 +22,12 @@
   "properties": {
     "schema_version": {
       "const": 1
+    },
+    "assignment_kind": {
+      "enum": [
+        "example",
+        "active"
+      ]
     },
     "assignment_id": {
       "type": "string",
@@ -79,6 +86,24 @@
       "$ref": "#/$defs/string_list"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "assignment_kind": {
+            "const": "active"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "base_revision": {
+            "pattern": "^[0-9a-f]{7,40}$"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "string_list": {
       "type": "array",

@@ -21,6 +21,7 @@ context is available.
 
 ## Owned Files
 
+- `docs/workstreams/work-task.md`
 - `src/edifice/work_task.py`
 - `tests/test_task_cli.py`
 

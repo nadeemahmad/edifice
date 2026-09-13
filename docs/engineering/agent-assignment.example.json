@@ -1,10 +1,11 @@
 {
   "schema_version": 1,
+  "assignment_kind": "example",
   "assignment_id": "meeting-notes-follow-up",
   "workstream": "meeting-notes",
   "mode": "implementation",
   "learning_level": "brief",
-  "base_revision": "e8bc130",
+  "base_revision": "replace-with-verified-commit",
   "branch": "nahmad/edifice-meeting-notes-codex",
   "worktree": "/Users/nahmad/Developer/worktrees/edifice-meeting-notes",
   "objective": "Implement one accepted meeting-note behavior without changing shared command registration or live vault state.",

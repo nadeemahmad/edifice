@@ -22,6 +22,7 @@ mutation.
 
 ## Owned Files
 
+- `docs/workstreams/document-review.md`
 - `src/edifice/document_review.py`
 - `src/edifice/document_review_worker.py`
 - `src/edifice/document-review-schema.json`

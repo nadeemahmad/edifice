@@ -22,6 +22,7 @@ series, without reading Calendar or mutating an external system.
 
 ## Owned Files
 
+- `docs/workstreams/meeting-notes.md`
 - `src/edifice/meeting_note.py`
 - `tests/test_meeting_cli.py`
 - `vault-template/20-work/notes/AGENTS.md`

@@ -31,6 +31,7 @@ reviewable closeout without unauthorized external mutation.
 
 ## Proposed Owned Files
 
+- `docs/workstreams/coding-workflow.md`
 - `src/edifice/coding_run.py`
 - `src/edifice/coding_worker.py`
 - `src/edifice/coding-run-schema.json`

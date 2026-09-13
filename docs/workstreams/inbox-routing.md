@@ -22,6 +22,7 @@ without losing their original wording.
 
 ## Owned Files
 
+- `docs/workstreams/inbox-routing.md`
 - `src/edifice/inbox.py`
 - `tests/test_inbox_cli.py`
 

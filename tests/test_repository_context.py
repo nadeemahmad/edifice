@@ -68,6 +68,7 @@ def test_agent_assignment_limits_feature_agent_to_registered_owned_paths() -> No
     }
 
     assert assignment["schema_version"] == 1
+    assert assignment["assignment_kind"] == "example"
     assert schema["properties"]["schema_version"]["const"] == 1
     assert assignment["workstream"] in workstreams
     assert assignment["branch"].startswith("nahmad/")

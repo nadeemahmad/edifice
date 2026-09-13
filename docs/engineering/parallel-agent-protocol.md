@@ -18,6 +18,10 @@ context and external-system permissions are independent.
 Each agent receives a JSON assignment matching
 `agent-assignment.schema.json`.
 
+Tracked examples use `assignment_kind: example` and are never executable
+assignments. A real dispatch uses `assignment_kind: active`, names an accepted
+behavior, and records the exact verified base revision.
+
 The assignment names:
 
 - one workstream;
