@@ -19,6 +19,10 @@ Read these files before substantive work:
 - Treat `90-archive` as read-only.
 - Preserve raw captures and provenance.
 - Use the `edifice` command for captures.
+- Use `edifice meeting start` or `edifice meeting series` only on an exact
+  owner request. Do not write or revise human-owned meeting content.
+- Recurring meeting commands may update only the local series manifest and the
+  marked history block in the standing note.
 - Use `edifice pdf add` for exact local PDF copies and catalog updates.
 - Do not enable synchronization while `20-work` contains local work context.
 - Do not store secrets, credentials, restricted personal data, or uncontrolled

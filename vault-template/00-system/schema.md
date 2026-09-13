@@ -25,32 +25,50 @@ Kernel v0 registers:
 - `project`
 - `question`
 - `review`
+- `meeting-note`
+- `meeting-series`
 - `work-context`
 - `work-context-run-report`
 - `pdf-catalog`
 - `adobe-pdf-import-review`
 - `migration-home`
+- `document-review`
+- `document-review-ai`
+- `document-review-run-report`
+- `inbox-routing-review`
+- `idea-seeds`
 
 Tasks remain Markdown checkboxes in the note that owns their context.
 
 ## Ownership
 
 - `10-personal/operations`: agent-writeable operational state.
+- `10-personal/operations/meeting-series`: recurring personal meeting
+  manifests.
 - `10-personal/notes`: human-owned and agent-readable.
+- `10-personal/notes/meetings`: human-owned personal meeting notes.
 - `10-personal/ai`: agent-writeable research and suggestions.
 - `20-work/operations`: governed work-task state and approved summaries.
+- `20-work/operations/meeting-series`: recurring work meeting manifests.
+- `20-work/operations/ideas`: classified work idea seeds that have not been
+  promoted into tasks or projects.
 - `20-work/references`: links and verified projections from authoritative work
   systems.
+- `20-work/notes/meetings`: human-owned work meeting notes.
 - `20-work/ai`: enterprise-agent research and synthesis.
 - `20-work/run-reports`: append-only work-session reports.
 - `10-personal/artifacts/pdfs`: exact local personal PDF copies.
 - `10-personal/operations/artifacts`: personal PDF index and Markdown catalog.
 - `20-work/references/pdfs`: temporary governed work PDF copies.
 - `20-work/references/pdf-catalog.*`: work PDF index and Markdown catalog.
+- `20-work/references/document-reviews`: review manifests and validated worker
+  results.
 - `10-personal/operations/artifacts/imports`: staged Adobe import manifests and
   review notes.
 - `10-personal/operations/migrations`: owner-facing migration status and
   resume instructions.
+- `10-personal/operations/inbox`: machine-readable capture routing records and
+  the owner-facing routing review.
 - `01-inbox/inbox.md`: append-only captures and reversible routing.
 - `00-system`: protected governance and configuration.
 - `90-archive`: read-only except for approved restore or retention work.
@@ -70,6 +88,44 @@ Tasks remain Markdown checkboxes in the note that owns their context.
   questions, and next actions.
 - Local PDF copies record their authoritative source, classification, SHA-256,
   size, and verification result.
+
+## Meeting note ownership
+
+- Meeting notes use type `meeting-note` and `ownership: human`.
+- Standing recurring notes use type `meeting-series` and `ownership: human`.
+- Personal notes live under `10-personal/notes/meetings`.
+- Work notes live under `20-work/notes/meetings` and require `public`,
+  `netflix-internal`, or `netflix-confidential` classification.
+- Series manifests are JSON operational records under the matching
+  `operations/meeting-series` path.
+- Series notes hold owner-written purpose, standing topics, and preparation
+  defaults. Edifice may replace only the marked meeting-history block.
+- Each occurrence records the stable series identity and links to the closest
+  earlier meeting.
+- Carry-forward links point to prior notes. Edifice does not copy prior 1:1
+  content automatically.
+- `created` records the capture date. `meeting_on` records when the meeting
+  occurred.
+- Agents may read an explicitly relevant meeting note but may not edit it
+  without exact owner approval.
+- Creation records redacted prepared and committed audit events.
+- Meeting capture performs no Calendar lookup, recording, transcription, or
+  external mutation.
+- Calendar remains authoritative for recurrence, attendance, and reminders.
+
+## Document review ownership
+
+- `20-work/operations/projects/*-document-review.md` contains the manual review
+  context and generated synthesis.
+- `20-work/ai/*-document-review.md` contains refreshable generated analysis and
+  manual analyst notes.
+- Only explicit marker blocks may be replaced.
+- Session manifests identify every authoritative URL, detected source type,
+  owner-attested title and context, and local PDF path.
+- Worker results must match the registered document IDs and URLs.
+- Gathered source blocks may add verified title, purpose, concise summary, and
+  evidence status without replacing owner context.
+- External document mutation is not part of the workflow.
 
 ## PDF naming
 

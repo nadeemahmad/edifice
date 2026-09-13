@@ -27,6 +27,16 @@ Owner-facing commands:
 - `edifice today`
 - `edifice work`
 - `edifice work-context`
+- `edifice meeting start`
+- `edifice meeting series create`
+- `edifice meeting series start`
+- `edifice task start`
+- `edifice review-docs start`
+- `edifice review-docs add`
+- `edifice review-docs gather`
+- `edifice review-docs synthesize`
+- `edifice review-docs open`
+- `edifice review-docs status`
 - `edifice context gather`
 - `edifice pdf add`
 - `edifice pdf inventory`
@@ -42,6 +52,9 @@ Owner-facing commands:
 - `edifice review`
 - `edifice status`
 - `edifice capture`
+- `edifice inbox review`
+- `edifice inbox process`
+- `edifice inbox route`
 - `edifice doctor`
 
 ## Boundaries
@@ -49,6 +62,12 @@ Owner-facing commands:
 - Personal content and governed local work context use separate directories.
 - Work context remains under `20-work` and keeps source, classification, and
   verification metadata.
+- Meeting notes are human-owned and remain under the personal or work notes
+  boundary selected by the owner.
+- Recurring meeting manifests maintain local series identity and history.
+  Calendar remains authoritative for recurrence and reminders.
+- Document reviews use persistent manifests, separate manual and AI notes,
+  refreshable generated sections, and read-only source access.
 - Context refresh replaces only marked generated blocks. Manual context remains
   owner-editable.
 - Authoritative links and PDF links are preferred. A local PDF copy requires an

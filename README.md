@@ -19,6 +19,20 @@ edifice start
 edifice today
 edifice work
 edifice work-context
+edifice meeting start --title MEETING --scope work \
+  --classification netflix-internal
+edifice meeting series create --title SERIES --scope work \
+  --classification netflix-internal
+edifice meeting series start SERIES
+edifice task start --name TASK \
+  --classification netflix-internal --review-on YYYY-MM-DD
+edifice review-docs start --name REVIEW \
+  --classification netflix-internal --review-on YYYY-MM-DD
+edifice review-docs add REVIEW --link DOCUMENT_URL
+edifice review-docs gather REVIEW
+edifice review-docs synthesize REVIEW
+edifice review-docs open REVIEW
+edifice review-docs status REVIEW
 edifice context gather --jira KEY --repo /absolute/repository/path \
   --classification netflix-internal --review-on YYYY-MM-DD
 edifice pdf add /absolute/path/document.pdf \
@@ -41,7 +55,141 @@ edifice review
 edifice status
 edifice doctor
 edifice capture "Text to preserve"
+edifice inbox review
+edifice inbox process
+edifice inbox route CAPTURE_ID --to current-work-note
 ```
+
+## Work tasks
+
+Start a local work task before JIRA, repository, or document context is
+available:
+
+```text
+edifice task start \
+  --name "Investigate evaluation failures" \
+  --classification netflix-internal \
+  --review-on YYYY-MM-DD
+```
+
+The command creates and selects
+`20-work/operations/projects/investigate-evaluation-failures.md`. It records
+the missing external context as `unavailable` or `not-applicable`, leaves
+manual sections for notes and references, and makes `edifice work` open the
+new task. It never contacts an external system.
+
+## Meeting notes
+
+Create and open a human-owned meeting note:
+
+```text
+edifice meeting start \
+  --title "Architecture sync" \
+  --scope work \
+  --classification netflix-internal
+```
+
+Use `--scope personal` for a personal meeting. Personal notes receive the
+`personal` classification automatically. Use `--held-on YYYY-MM-DD` when
+capturing notes for a meeting held on another date.
+
+Meeting notes are stored under:
+
+```text
+10-personal/notes/meetings
+20-work/notes/meetings
+```
+
+Each note includes sections for attendees, notes, decisions, action items,
+open questions, and follow-up. Creation records redacted prepared and
+committed audit events. The command does not read Calendar, invite attendees,
+record audio, transcribe speech, or mutate an external system.
+
+For a recurring 1:1, create the series once:
+
+```text
+edifice meeting series create \
+  --title "1:1 with Jordan" \
+  --scope work \
+  --classification netflix-internal
+```
+
+Create each occurrence from the saved series:
+
+```text
+edifice meeting series start 1-1-with-jordan
+edifice meeting series start 1-1-with-jordan --held-on 2026-09-16
+```
+
+The standing series note holds purpose, standing topics, and preparation
+defaults. Each occurrence includes preparation prompts, a carry-forward link
+to the prior meeting, and the standard note sections. Edifice refreshes only
+the marked meeting-history block in the standing note and preserves all
+owner-written content.
+
+Calendar remains authoritative for recurrence and reminders. Series creation
+does not schedule a meeting, invite anyone, or copy prior 1:1 content into a
+new note.
+
+## Inbox routing
+
+Refresh and open the Inbox review:
+
+```text
+edifice inbox review
+```
+
+Review up to five captures interactively:
+
+```text
+edifice inbox review --interactive
+```
+
+The interactive flow asks for personal, work, archive, leave, or quit. Personal
+and work choices then ask whether the capture is a task, note, question, or
+idea. Every route previews its destination and requires confirmation.
+
+Refresh without opening Obsidian:
+
+```text
+edifice inbox process
+```
+
+The command adds stable IDs to unchecked lines that were typed directly into
+the Inbox. It refreshes:
+
+```text
+10-personal/operations/inbox/routing.json
+10-personal/operations/inbox/review.md
+```
+
+Ambiguous captures remain unchecked. Explicit `work task:`, `work note:`,
+`work question:`, and `personal idea:` prefixes receive owner-attested route
+suggestions but are not applied silently.
+
+Apply one reviewed route:
+
+```text
+edifice inbox route CAPTURE_ID --to current-work-task
+edifice inbox route CAPTURE_ID --to current-work-note
+edifice inbox route CAPTURE_ID --to current-work-question
+edifice inbox route CAPTURE_ID --to personal-project-task
+edifice inbox route CAPTURE_ID --to personal-project-note
+edifice inbox route CAPTURE_ID --to personal-project-question
+edifice inbox route CAPTURE_ID --to personal-idea
+edifice inbox route CAPTURE_ID --to work-idea \
+  --classification netflix-internal
+edifice inbox route CAPTURE_ID --to archive
+```
+
+Routing preserves the original Inbox wording, adds a source link and route ID
+to the destination, records a redacted audit event, and is safe to retry.
+`inbox process` also reports missing or changed destinations.
+
+Personal project routes use the project selected in `00-system/current.json`.
+Work routes require a selected project under `20-work/operations/projects`.
+Work ideas remain seeds under `20-work/operations/ideas/seeds.md`; they do not
+become tasks until promoted.
 
 `context gather` creates or refreshes
 `20-work/operations/projects/<jira-key>-context.md`. It replaces only the
@@ -62,6 +210,52 @@ provided bytes without overwriting a different file and records the source,
 classification, SHA-256, byte size, and verification result.
 Use `--accept-pdf-name` when the PDF catalog reports a medium- or
 low-confidence name.
+
+## Document reviews
+
+Create a reusable work review:
+
+```text
+edifice review-docs start \
+  --name "Architecture review" \
+  --classification netflix-internal \
+  --review-on 2026-09-15
+
+edifice review-docs add architecture-review \
+  --link DOCUMENT_URL \
+  --title "Document title" \
+  --context "Why this document matters to the review"
+edifice review-docs gather architecture-review
+edifice review-docs synthesize architecture-review
+edifice review-docs open architecture-review
+```
+
+`--link` and `--pdf-link` accept either a raw URL or a pasted Markdown link.
+Edifice detects Google Docs, Sheets, Slides, Forms, Drive files, PDF links, and
+other web links. Owner-supplied titles and context are recorded as
+`owner-attested`.
+
+The workflow stores a persistent manifest, a manual work context note, a
+separate AI analysis workspace, the latest validated worker result, and an
+append-only run report. Gather replaces only marked generated analysis;
+manual context and analyst notes remain unchanged. Gather enriches the
+generated document list with the verified title, purpose, concise summary, and
+evidence status returned from the authoritative source.
+
+PDF options:
+
+```text
+edifice review-docs add REVIEW --pdf-link PDF_URL
+edifice review-docs add REVIEW \
+  --copy-pdf /absolute/file.pdf SOURCE_URL \
+  --title "Document title" \
+  --context "Why this PDF matters" \
+  --accept-pdf-name
+```
+
+The worker runs read-only with only the allowlisted Netflix knowledge search
+and content-read tools. External documents are never commented on, edited,
+shared, moved, or deleted.
 
 ## PDF library
 

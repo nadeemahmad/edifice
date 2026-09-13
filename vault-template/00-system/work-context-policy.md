@@ -64,6 +64,11 @@ Every durable work-context note identifies:
   outside the generated block.
 - Every run writes a bounded append-only report and a redacted audit event.
 - Gathering never mutates an external system.
+- Document-review workers may search and read only the URLs registered in the
+  review manifest.
+- Document-review workers use only the allowlisted knowledge search and
+  content-read tools.
+- Generated analysis and synthesis never authorize external comments or edits.
 - Reviewed legacy work notes may migrate into local `20-work` paths while Sync
   remains disabled.
 - Storage on a Netflix-managed device does not itself classify content, and a

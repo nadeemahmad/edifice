@@ -29,6 +29,58 @@ edifice work
 
 Opens the project selected in `00-system/current.json`.
 
+## Start work without context
+
+```text
+edifice task start \
+  --name "Investigate evaluation failures" \
+  --classification netflix-internal \
+  --review-on YYYY-MM-DD
+```
+
+This creates a local task under `20-work/operations/projects` and selects it
+for `edifice work`. No JIRA issue, repository, document, or external access is
+required. Add notes, links, PDFs, decisions, and questions under
+`Manual context`.
+
+## Capture meeting notes
+
+```text
+edifice meeting start \
+  --title "Architecture sync" \
+  --scope work \
+  --classification netflix-internal
+```
+
+The command creates and opens a human-owned note under
+`20-work/notes/meetings`. Use `--scope personal` for
+`10-personal/notes/meetings`, and use `--held-on YYYY-MM-DD` when the meeting
+occurred on another date.
+
+The note has sections for attendees, notes, decisions, action items, open
+questions, and follow-up. Edifice records redacted audit evidence but does not
+read Calendar, record audio, transcribe speech, or change an external system.
+
+For a recurring 1:1, create a reusable series:
+
+```text
+edifice meeting series create \
+  --title "1:1 with Jordan" \
+  --scope work \
+  --classification netflix-internal
+```
+
+Start each occurrence with:
+
+```text
+edifice meeting series start 1-1-with-jordan
+```
+
+The occurrence includes preparation prompts and a carry-forward link to the
+previous meeting. The standing series note retains owner-written purpose,
+topics, and defaults while Edifice refreshes only its marked history block.
+Calendar remains authoritative for the recurring event.
+
 ## Open work context
 
 ```text
@@ -37,6 +89,43 @@ edifice work-context
 
 Opens the local-only `20-work` cockpit. Work context may remain there only
 while Sync is disabled.
+
+## Review documents
+
+Start a reusable review session:
+
+```text
+edifice review-docs start \
+  --name "Architecture review" \
+  --classification netflix-internal \
+  --review-on 2026-09-15
+```
+
+Add authoritative sources:
+
+```text
+edifice review-docs add architecture-review \
+  --link DOCUMENT_URL \
+  --title "Document title" \
+  --context "Why this document matters to the review"
+edifice review-docs add architecture-review --pdf-link PDF_URL
+```
+
+Raw URLs and pasted Markdown links are accepted. Edifice detects Google Docs,
+Sheets, Slides, Forms, Drive files, PDF links, and other web links. The
+`--title` and `--context` values remain owner-attested; `gather` adds verified
+source title, purpose, summary, and evidence status.
+
+Gather and synthesize:
+
+```text
+edifice review-docs gather architecture-review
+edifice review-docs synthesize architecture-review
+edifice review-docs open architecture-review
+```
+
+Write review objectives, criteria, notes, questions, and feedback under
+`Manual context`. Generated refreshes never replace those sections.
 
 ## Gather work context
 
@@ -232,6 +321,32 @@ edifice capture "Exact words to preserve"
 Adds the text to `01-inbox/inbox.md` with a stable ID and redacted audit
 evidence.
 
+Process captured notes later:
+
+```text
+edifice inbox review
+```
+
+The command refreshes and opens
+`10-personal/operations/inbox/review.md`. Ambiguous captures stay in the Inbox.
+Route one capture after choosing its destination:
+
+```text
+edifice inbox route CAPTURE_ID --to current-work-note
+```
+
+Use the interactive review for personal and work tasks, notes, questions,
+ideas, archive, leave, and quit:
+
+```text
+edifice inbox review --interactive
+```
+
+The command processes at most five captures by default. It previews the exact
+destination and asks for confirmation before every route. Work ideas require a
+classification and remain seeds rather than tasks. Archive preserves the raw
+capture and records a reversible disposition.
+
 ## Check health
 
 ```text
@@ -253,6 +368,7 @@ Verifies the minimum vault structure and confirms Obsidian Sync is disabled.
 9. Use `edifice migrate status` to resume staged source migrations.
 10. Add or edit manual context directly in Obsidian.
 11. Capture interruptions without changing focus.
-12. Update the project resume point and daily closeout.
-13. Run `edifice status`.
-14. Use `edifice review` during the weekly review.
+12. Run `edifice inbox review` during triage.
+13. Update the project resume point and daily closeout.
+14. Run `edifice status`.
+15. Use `edifice review` during the weekly review.

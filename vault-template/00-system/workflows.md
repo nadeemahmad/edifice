@@ -11,6 +11,11 @@ created: 2026-09-07
 - `edifice today` opens the current daily review.
 - `edifice work` opens the selected active project.
 - `edifice work-context` opens the local work cockpit.
+- `edifice meeting start` creates and opens a human-owned meeting note.
+- `edifice meeting series create` creates a recurring meeting series.
+- `edifice meeting series start` creates its next dated occurrence.
+- `edifice task start` creates and selects a task without external context.
+- `edifice review-docs` creates and operates reusable document reviews.
 - `edifice context gather` creates or refreshes bounded work context.
 - `edifice pdf add` copies and catalogs one intentionally selected PDF.
 - `edifice pdf inventory` verifies both local PDF catalogs.
@@ -27,6 +32,11 @@ created: 2026-09-07
 - `edifice migrate status` lists resumable packages.
 - `edifice review` opens the current weekly review.
 - `edifice status` reports the current paths, Inbox count, and Git state.
+- `edifice inbox review` refreshes and opens the routing review.
+- `edifice inbox review --interactive` processes a bounded owner-reviewed
+  batch.
+- `edifice inbox process` identifies captures and refreshes routing review.
+- `edifice inbox route` applies one approved reversible route.
 
 ## Capture
 
@@ -35,7 +45,60 @@ created: 2026-09-07
 3. The command adds a stable capture ID.
 4. The command writes prepared and committed audit events without copying the
    captured text into the audit log.
-5. Triage later. Never discard a capture silently.
+5. Run `edifice inbox review` during later triage.
+6. Review ambiguous captures in
+   `10-personal/operations/inbox/review.md`.
+7. Use `edifice inbox review --interactive` for a progressive personal, work,
+   archive, leave, or quit choice.
+8. Classify every work idea explicitly before routing it to the work seed
+   note.
+9. Preview and confirm the exact local effect.
+10. Preserve the Inbox wording and destination link.
+11. Re-run processing to detect missing destinations or incomplete routing.
+12. Never discard a capture silently.
+
+## Work task
+
+1. Run `edifice task start --name NAME --classification CLASSIFICATION
+   --review-on YYYY-MM-DD`.
+2. Edifice creates a local project note and selects it as the current work
+   item.
+3. Define the result and first action in the note.
+4. Add manual notes, links, PDFs, decisions, and questions as they become
+   available.
+5. Gather external context separately when the task acquires an authoritative
+   JIRA issue and repository.
+6. Run `edifice work` to resume the selected task.
+
+## Meeting notes
+
+1. Run `edifice meeting start --title TITLE --scope SCOPE`.
+2. Add `--classification CLASSIFICATION` for every work meeting.
+3. Use `--held-on YYYY-MM-DD` when the meeting occurred on another date.
+4. Edifice creates and opens a human-owned note in the selected notes boundary.
+5. Record attendees, notes, decisions, action items, open questions, and
+   follow-up directly in the note.
+6. Move durable tasks, project state, or persistent questions into their
+   authoritative operational notes after the meeting.
+7. Keep Calendar, recordings, transcripts, and shared documents authoritative
+   in their existing systems.
+8. Do not edit or distribute meeting notes through an external system without
+   a separate approved workflow.
+
+For recurring meetings:
+
+1. Run `edifice meeting series create` once with title, scope, and work
+   classification when applicable.
+2. Record purpose, standing topics, and preparation defaults in the human-owned
+   series note.
+3. Run `edifice meeting series start SERIES` for each occurrence.
+4. Review the carry-forward link and prepare objectives, topics, questions,
+   decisions, and pre-reading.
+5. Edifice records the occurrence in the local manifest and refreshes only the
+   generated history block.
+6. Do not treat the series manifest as a Calendar or reminder system.
+7. Do not copy sensitive prior content automatically. Follow the previous note
+   only when its contents are appropriate for the current meeting.
 
 ## Work context
 
@@ -54,6 +117,20 @@ created: 2026-09-07
    bulk exports.
 10. Keep external mutation disabled.
 11. Remove or relocate `20-work` before personal Sync is enabled.
+
+## Document review
+
+1. Start one named review with classification and review date.
+2. Add raw URLs or pasted Markdown links, with optional owner title and context.
+3. Let Edifice detect Google Docs, Drive files, PDFs, and other web sources.
+4. Record the objective and review criteria manually.
+5. Gather through the read-only allowlisted worker.
+6. Inspect the verified source title, purpose, summary, claims, strengths,
+   concerns, questions, and proposed feedback.
+7. Synthesize agreements, conflicts, gaps, and decision points.
+8. Refine the feedback draft manually.
+9. Keep external documents authoritative and unchanged.
+10. Resume through `review-docs status` rather than conversation history.
 
 ## PDF library
 

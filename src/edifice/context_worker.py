@@ -47,7 +47,7 @@ def gather_with_codex(
     codex_binary: str,
 ) -> dict[str, object]:
     """Gather bounded work context through a read-only Codex worker."""
-    mcp_servers = _list_mcp_servers(codex_binary)
+    mcp_servers = list_mcp_servers(codex_binary)
     if ALLOWED_MCP_SERVER not in mcp_servers:
         raise click.ClickException(
             f"Required MCP server is unavailable: {ALLOWED_MCP_SERVER}"
@@ -100,7 +100,7 @@ def gather_with_codex(
     return context_data
 
 
-def _list_mcp_servers(codex_binary: str) -> list[str]:
+def list_mcp_servers(codex_binary: str) -> list[str]:
     try:
         result = subprocess.run(
             [codex_binary, "mcp", "list", "--json"],

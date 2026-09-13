@@ -19,7 +19,33 @@ from edifice.adobe_import import (
     default_adobe_cache_roots,
     plan_adobe_import,
 )
+from edifice.document_review import (
+    add_review_document,
+    gather_review,
+    get_review_status,
+    load_review_manifest,
+    normalize_review_source,
+    review_contains_document,
+    review_paths,
+    start_review,
+    synthesize_review,
+)
 from edifice.identifiers import new_uuid7
+from edifice.inbox import (
+    ROUTES,
+    InboxProcessResult,
+    InboxReviewItem,
+    InboxRouteResult,
+    preview_route,
+    process_inbox,
+    review_items,
+    route_capture,
+)
+from edifice.meeting_note import (
+    create_meeting_note,
+    create_meeting_series,
+    start_meeting_series,
+)
 from edifice.migration import (
     apply_migration,
     approve_migration_batch,
@@ -35,6 +61,7 @@ from edifice.pdf_library import (
     inventory_pdfs,
 )
 from edifice.work_context import gather_work_context
+from edifice.work_task import start_work_task
 
 
 @dataclass(frozen=True)
@@ -55,6 +82,8 @@ REQUIRED_VAULT_FILES = (
     Path("00-system/workflows.md"),
     Path("00-system/current.json"),
     Path("00-system/engineering/owner-practices.md"),
+    Path("00-system/templates/document-review.md"),
+    Path("00-system/templates/document-review-ai.md"),
     Path("01-inbox/inbox.md"),
     Path("10-personal/artifacts/AGENTS.md"),
     Path("10-personal/notes/imported/AGENTS.md"),
@@ -66,6 +95,7 @@ REQUIRED_VAULT_FILES = (
 REQUIRED_WORK_FILES = (
     Path("00-system/work-context-policy.md"),
     Path("20-work/AGENTS.md"),
+    Path("20-work/references/document-reviews/AGENTS.md"),
 )
 
 
@@ -148,6 +178,264 @@ def capture(paths: RuntimePaths, text: str) -> None:
     click.echo(f"Captured {capture_id}")
 
 
+@cli.group("inbox")
+def inbox_command() -> None:
+    """Collect and route canonical Inbox captures."""
+
+
+@inbox_command.command("process")
+@click.pass_obj
+def process_inbox_command(paths: RuntimePaths) -> None:
+    """Identify unprocessed captures and refresh their routing review."""
+    result = process_inbox(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+    )
+    _echo_inbox_process_result(result)
+
+
+@inbox_command.command("review")
+@click.option("--interactive", is_flag=True)
+@click.option(
+    "--limit",
+    type=click.IntRange(1, 20),
+    default=5,
+    show_default=True,
+    help="Maximum captures to present during interactive review.",
+)
+@click.pass_obj
+def review_inbox_command(
+    paths: RuntimePaths,
+    interactive: bool,
+    limit: int,
+) -> None:
+    """Refresh and open the Inbox routing review."""
+    result = process_inbox(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+    )
+    if interactive:
+        _review_inbox_interactively(
+            paths, review_items(vault_root=paths.vault_root), limit
+        )
+        result = process_inbox(
+            vault_root=paths.vault_root,
+            audit_root=paths.audit_root,
+        )
+    _echo_inbox_process_result(result)
+    _open_note(paths, result.review_path)
+
+
+def _echo_inbox_process_result(result: InboxProcessResult) -> None:
+    click.echo(f"Processed captures: {result.processed}.")
+    click.echo(f"Needs review: {result.needs_review}.")
+    click.echo(f"Routing failures: {result.routing_failures}.")
+    click.echo(f"Review: {result.review_path}.")
+
+
+def _review_inbox_interactively(
+    paths: RuntimePaths,
+    items: tuple[InboxReviewItem, ...],
+    limit: int,
+) -> None:
+    selected_items = items[:limit]
+    if not selected_items:
+        click.echo("No captures need review.")
+        return
+    for index, item in enumerate(selected_items, start=1):
+        click.echo("")
+        click.echo(f"Capture {index} of {len(selected_items)}")
+        click.echo(item.text)
+        click.echo(
+            f"Suggested: {item.suggested_route} (evidence: {item.evidence_status})"
+        )
+        if not _review_one_capture(paths, item):
+            break
+
+
+def _review_one_capture(paths: RuntimePaths, item: InboxReviewItem) -> bool:
+    while True:
+        scope = click.prompt(
+            "Choose",
+            type=click.Choice(
+                ["personal", "work", "archive", "leave", "quit"],
+                case_sensitive=False,
+            ),
+            default=_suggested_scope(item.suggested_route),
+            show_choices=True,
+        )
+        if scope == "quit":
+            return False
+        if scope == "leave":
+            return True
+        if scope == "archive":
+            _apply_interactive_route(paths, item.capture_id, "archive")
+            return True
+        if scope == "personal":
+            kind = click.prompt(
+                "Personal kind",
+                type=click.Choice(
+                    ["task", "note", "question", "idea", "back"],
+                    case_sensitive=False,
+                ),
+                default=_suggested_kind(item.suggested_route, "personal"),
+                show_choices=True,
+            )
+            if kind == "back":
+                continue
+            route = {
+                "task": "personal-project-task",
+                "note": "personal-project-note",
+                "question": "personal-project-question",
+                "idea": "personal-idea",
+            }[kind]
+            if _apply_interactive_route(paths, item.capture_id, route):
+                return True
+            continue
+        kind = click.prompt(
+            "Work kind",
+            type=click.Choice(
+                ["task", "note", "question", "idea", "back"],
+                case_sensitive=False,
+            ),
+            default=_suggested_kind(item.suggested_route, "work"),
+            show_choices=True,
+        )
+        if kind == "back":
+            continue
+        route = {
+            "task": "current-work-task",
+            "note": "current-work-note",
+            "question": "current-work-question",
+            "idea": "work-idea",
+        }[kind]
+        classification = None
+        if route == "work-idea":
+            classification = click.prompt(
+                "Classification",
+                type=click.Choice(
+                    ["public", "netflix-internal", "netflix-confidential"],
+                    case_sensitive=False,
+                ),
+                show_choices=True,
+            )
+        if _apply_interactive_route(
+            paths,
+            item.capture_id,
+            route,
+            classification=classification,
+        ):
+            return True
+
+
+def _apply_interactive_route(
+    paths: RuntimePaths,
+    capture_id: str,
+    route: str,
+    *,
+    classification: str | None = None,
+) -> bool:
+    try:
+        destination = preview_route(
+            vault_root=paths.vault_root,
+            route=route,
+        )
+    except click.ClickException as error:
+        click.echo(f"Could not apply route: {error.message}")
+        return False
+    if route == "archive":
+        click.echo("Effect: preserve the capture and mark it archived.")
+    else:
+        click.echo(f"Destination: {destination}")
+    if not click.confirm("Apply this choice?", default=False):
+        return False
+    try:
+        result = route_capture(
+            vault_root=paths.vault_root,
+            audit_root=paths.audit_root,
+            capture_id=capture_id,
+            route=route,
+            classification=classification,
+        )
+    except click.ClickException as error:
+        click.echo(f"Could not apply route: {error.message}")
+        return False
+    _echo_inbox_route_result(result, route)
+    return True
+
+
+def _suggested_scope(route: str) -> str:
+    if route.startswith("personal-"):
+        return "personal"
+    if route.startswith("current-work") or route == "work-idea":
+        return "work"
+    return "leave"
+
+
+def _suggested_kind(route: str, scope: str) -> str:
+    expected = {
+        "personal": {
+            "personal-project-task": "task",
+            "personal-project-note": "note",
+            "personal-project-question": "question",
+            "personal-idea": "idea",
+        },
+        "work": {
+            "current-work-task": "task",
+            "current-work-note": "note",
+            "current-work-question": "question",
+            "work-idea": "idea",
+        },
+    }
+    return expected[scope].get(route, "back")
+
+
+@inbox_command.command("route")
+@click.argument("capture_id")
+@click.option(
+    "--to",
+    "route",
+    required=True,
+    type=click.Choice(sorted(ROUTES), case_sensitive=False),
+)
+@click.option(
+    "--classification",
+    type=click.Choice(
+        ["public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+    help="Required when routing a work idea.",
+)
+@click.pass_obj
+def route_inbox_command(
+    paths: RuntimePaths,
+    capture_id: str,
+    route: str,
+    classification: str | None,
+) -> None:
+    """Route one identified capture to an approved local destination."""
+    result = route_capture(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        capture_id=capture_id,
+        route=route,
+        classification=classification,
+    )
+    _echo_inbox_route_result(result, route)
+
+
+def _echo_inbox_route_result(
+    result: InboxRouteResult,
+    route: str,
+) -> None:
+    if route == "archive":
+        verb = "Already archived" if result.already_routed else "Archived"
+        click.echo(f"{verb} {result.capture_id}.")
+        return
+    verb = "Already routed" if result.already_routed else "Routed"
+    click.echo(f"{verb} {result.capture_id} to {result.destination}.")
+
+
 @cli.command()
 @click.pass_obj
 def doctor(paths: RuntimePaths) -> None:
@@ -198,6 +486,341 @@ def work(paths: RuntimePaths) -> None:
 def work_context(paths: RuntimePaths) -> None:
     """Open the local work-context cockpit."""
     _open_note(paths, Path("20-work/home.md"))
+
+
+@cli.group("meeting")
+def meeting_command() -> None:
+    """Create human-owned meeting notes."""
+
+
+@meeting_command.group("series")
+def meeting_series_command() -> None:
+    """Create and use recurring meeting series."""
+
+
+@meeting_series_command.command("create")
+@click.option("--title", required=True)
+@click.option(
+    "--scope",
+    required=True,
+    type=click.Choice(["personal", "work"], case_sensitive=False),
+)
+@click.option(
+    "--classification",
+    type=click.Choice(
+        ["personal", "public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.pass_obj
+def create_meeting_series_command(
+    paths: RuntimePaths,
+    title: str,
+    scope: str,
+    classification: str | None,
+) -> None:
+    """Create and open one recurring meeting series."""
+    result = create_meeting_series(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        title=title,
+        scope=scope,
+        classification=classification,
+    )
+    click.echo(f"Created meeting series: {result.slug}.")
+    _open_note(paths, result.note_path)
+
+
+@meeting_series_command.command("start")
+@click.argument("slug")
+@click.option(
+    "--held-on",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.pass_obj
+def start_meeting_series_command(
+    paths: RuntimePaths,
+    slug: str,
+    held_on: datetime | None,
+) -> None:
+    """Create and open one dated meeting in a recurring series."""
+    result = start_meeting_series(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        slug=slug,
+        meeting_on=held_on.date() if held_on is not None else None,
+    )
+    click.echo(f"Created meeting note: {result.note_path}.")
+    _open_note(paths, result.note_path)
+
+
+@meeting_command.command("start")
+@click.option("--title", required=True)
+@click.option(
+    "--scope",
+    required=True,
+    type=click.Choice(["personal", "work"], case_sensitive=False),
+)
+@click.option(
+    "--classification",
+    type=click.Choice(
+        ["personal", "public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "--held-on",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.pass_obj
+def start_meeting_command(
+    paths: RuntimePaths,
+    title: str,
+    scope: str,
+    classification: str | None,
+    held_on: datetime | None,
+) -> None:
+    """Create and open one local meeting note."""
+    result = create_meeting_note(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        title=title,
+        scope=scope,
+        classification=classification,
+        meeting_on=held_on.date() if held_on is not None else None,
+    )
+    click.echo(f"Created meeting note: {result.note_path}.")
+    _open_note(paths, result.note_path)
+
+
+@cli.group("task")
+def task_command() -> None:
+    """Create and operate local work tasks."""
+
+
+@task_command.command("start")
+@click.option("--name", required=True)
+@click.option(
+    "--classification",
+    required=True,
+    type=click.Choice(
+        ["public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "--review-on",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.option(
+    "--persistence-reason",
+    default="Active task state required for the current objective.",
+    show_default=True,
+)
+@click.pass_obj
+def start_task_command(
+    paths: RuntimePaths,
+    name: str,
+    classification: str,
+    review_on: datetime,
+    persistence_reason: str,
+) -> None:
+    """Create a work task without gathering external context."""
+    result = start_work_task(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        name=name,
+        classification=classification,
+        review_on=review_on.date(),
+        persistence_reason=persistence_reason,
+    )
+    click.echo(f"Created work task: {result.slug}.")
+    click.echo(f"Note: {result.note_path}.")
+    click.echo("Run `edifice work` to open it.")
+
+
+@cli.group("review-docs")
+def review_docs_command() -> None:
+    """Create and operate reusable document-review sessions."""
+
+
+@review_docs_command.command("start")
+@click.option("--name", required=True)
+@click.option(
+    "--classification",
+    required=True,
+    type=click.Choice(
+        ["public", "netflix-internal", "netflix-confidential"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "--review-on",
+    required=True,
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+)
+@click.pass_obj
+def start_document_review_command(
+    paths: RuntimePaths,
+    name: str,
+    classification: str,
+    review_on: datetime,
+) -> None:
+    """Create a persistent document-review session."""
+    slug, review = start_review(
+        vault_root=paths.vault_root,
+        name=name,
+        classification=classification,
+        review_on=review_on.date(),
+    )
+    click.echo(f"Review: {slug}.")
+    click.echo(f"Context: {review.context_note.relative_to(paths.vault_root)}.")
+    click.echo(f"AI workspace: {review.ai_note.relative_to(paths.vault_root)}.")
+
+
+@review_docs_command.command("add")
+@click.argument("slug")
+@click.option("--link", help="Authoritative URL or Markdown link.")
+@click.option("--pdf-link", help="Authoritative PDF URL or Markdown link.")
+@click.option(
+    "--copy-pdf",
+    type=(click.Path(path_type=Path, dir_okay=False), str),
+    metavar="FILE SOURCE_URL",
+)
+@click.option("--title", help="Owner-attested document title.")
+@click.option("--context", "source_context", help="Why this source matters.")
+@click.option("--accept-pdf-name", is_flag=True)
+@click.pass_obj
+def add_document_review_command(
+    paths: RuntimePaths,
+    slug: str,
+    link: str | None,
+    pdf_link: str | None,
+    copy_pdf: tuple[Path, str] | None,
+    title: str | None,
+    source_context: str | None,
+    accept_pdf_name: bool,
+) -> None:
+    """Add one authoritative document to a review session."""
+    supplied = sum(value is not None for value in (link, pdf_link, copy_pdf))
+    if supplied != 1:
+        raise click.ClickException(
+            "Provide exactly one of --link, --pdf-link, or --copy-pdf."
+        )
+    source_url: str
+    kind: str
+    local_path: str | None = None
+    if link is not None:
+        source_url, markdown_title = normalize_review_source(link)
+        title = title if title is not None else markdown_title
+        kind = "link"
+    elif pdf_link is not None:
+        source_url, markdown_title = normalize_review_source(pdf_link)
+        title = title if title is not None else markdown_title
+        kind = "pdf-link"
+    else:
+        assert copy_pdf is not None
+        local_file, source_reference = copy_pdf
+        source_url, markdown_title = normalize_review_source(source_reference)
+        title = title if title is not None else markdown_title
+        if review_contains_document(
+            vault_root=paths.vault_root,
+            slug=slug,
+            source_url=source_url,
+        ):
+            action, review = add_review_document(
+                vault_root=paths.vault_root,
+                slug=slug,
+                source_url=source_url,
+                kind="local-pdf",
+                title=title,
+                context=source_context,
+            )
+            verb = "Updated" if action == "updated" else "Already present"
+            click.echo(f"{verb}: {source_url}.")
+            click.echo(f"Context: {review.context_note.relative_to(paths.vault_root)}.")
+            return
+        manifest = load_review_manifest(review_paths(paths.vault_root, slug).manifest)
+        result = add_pdf(
+            vault_root=paths.vault_root,
+            audit_root=paths.audit_root,
+            source_pdf=local_file,
+            scope="work",
+            classification=cast(str, manifest["classification"]),
+            source_url=source_url,
+            document_kind=None,
+            title=None,
+            creator=None,
+            year=None,
+            version=None,
+            accept_name=accept_pdf_name,
+            dry_run=False,
+        )
+        kind = "local-pdf"
+        local_path = result.storage_path.as_posix()
+    action, review = add_review_document(
+        vault_root=paths.vault_root,
+        slug=slug,
+        source_url=source_url,
+        kind=kind,
+        local_path=local_path,
+        title=title,
+        context=source_context,
+    )
+    verb = {
+        "added": "Added",
+        "updated": "Updated",
+        "unchanged": "Already present",
+    }[action]
+    click.echo(f"{verb}: {source_url}.")
+    click.echo(f"Context: {review.context_note.relative_to(paths.vault_root)}.")
+
+
+@review_docs_command.command("gather")
+@click.argument("slug")
+@click.pass_obj
+def gather_document_review_command(paths: RuntimePaths, slug: str) -> None:
+    """Read documents and refresh the generated AI analysis."""
+    review = gather_review(
+        vault_root=paths.vault_root,
+        audit_root=paths.audit_root,
+        slug=slug,
+        codex_binary=os.environ.get("EDIFICE_CODEX_BIN", "codex"),
+    )
+    click.echo(f"Gathered: {review.ai_note.relative_to(paths.vault_root)}.")
+
+
+@review_docs_command.command("synthesize")
+@click.argument("slug")
+@click.pass_obj
+def synthesize_document_review_command(paths: RuntimePaths, slug: str) -> None:
+    """Publish the latest cross-document synthesis into the context note."""
+    review = synthesize_review(vault_root=paths.vault_root, slug=slug)
+    click.echo(f"Synthesized: {review.context_note.relative_to(paths.vault_root)}.")
+
+
+@review_docs_command.command("open")
+@click.argument("slug")
+@click.pass_obj
+def open_document_review_command(paths: RuntimePaths, slug: str) -> None:
+    """Open a document-review context note."""
+    review = review_paths(paths.vault_root, slug)
+    _open_note(paths, review.context_note.relative_to(paths.vault_root))
+
+
+@review_docs_command.command("status")
+@click.argument("slug")
+@click.pass_obj
+def status_document_review_command(paths: RuntimePaths, slug: str) -> None:
+    """Show persistent document-review state."""
+    status = get_review_status(vault_root=paths.vault_root, slug=slug)
+    click.echo(f"Review: {status.name}")
+    click.echo(f"Status: {status.status}")
+    click.echo(f"Documents: {status.document_count}")
+    click.echo(f"Classification: {status.classification}")
+    click.echo(f"Review on: {status.review_on}")
+    click.echo(f"Last gathered: {status.last_gathered or 'never'}")
 
 
 @cli.group("context")

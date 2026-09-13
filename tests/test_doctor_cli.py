@@ -14,6 +14,8 @@ REQUIRED_FILES = [
     "00-system/workflows.md",
     "00-system/current.json",
     "00-system/engineering/owner-practices.md",
+    "00-system/templates/document-review.md",
+    "00-system/templates/document-review-ai.md",
     "01-inbox/inbox.md",
     "10-personal/artifacts/AGENTS.md",
     "10-personal/notes/imported/AGENTS.md",
