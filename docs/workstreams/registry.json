@@ -53,6 +53,35 @@
       ]
     },
     {
+      "id": "document-library",
+      "title": "Document Library",
+      "status": "active",
+      "mode": "implementation",
+      "context": "docs/workstreams/document-library.md",
+      "owned_paths": [
+        "docs/workstreams/document-library.md",
+        "pyproject.toml",
+        "src/edifice/document_library.py",
+        "src/edifice/nflx_google.py",
+        "tests/test_document_library_cli.py",
+        "uv.lock"
+      ],
+      "shared_paths": [
+        "README.md",
+        "src/edifice/cli.py",
+        "vault-template/00-system/getting-started.md",
+        "vault-template/00-system/operating-manual.md",
+        "vault-template/00-system/schema.md",
+        "vault-template/00-system/work-context-policy.md",
+        "vault-template/00-system/workflows.md",
+        "vault-template/20-work/home.md"
+      ],
+      "dependencies": [
+        "nflx-google-oauth",
+        "governed-work-context"
+      ]
+    },
+    {
       "id": "work-task",
       "title": "Work Projects and Tasks",
       "status": "active",
