@@ -12,6 +12,7 @@ from pytest import MonkeyPatch
 
 from edifice.cli import cli
 from edifice.coding_launch import (
+    CodexLaunchRetryableError,
     CodexTask,
     CodexTaskStartedError,
     launch_with_codex_app,
@@ -419,6 +420,18 @@ class _FakeAppServerProcess:
         return 0
 
 
+class _BrokenInput(_RecordingInput):
+    def write(self, text: str) -> int:
+        del text
+        raise BrokenPipeError("proxy input closed")
+
+
+class _WaitFailureProcess(_FakeAppServerProcess):
+    def wait(self, timeout: float | None = None) -> int:
+        del timeout
+        raise OSError("wait failed")
+
+
 class _StalledOutput(io.StringIO):
     def readline(self, size: int = -1) -> str:
         del size
@@ -578,6 +591,88 @@ def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
     assert task.instruction_sources == (repository / "AGENTS.md",)
 
 
+def test_codex_app_launcher_follows_project_list_pagination(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    responses: list[dict[str, object]] = [
+        {"id": 1, "result": {}},
+        {
+            "id": 2,
+            "result": {
+                "data": [],
+                "nextCursor": "page-2",
+            },
+        },
+        {
+            "id": 3,
+            "result": {
+                "data": [
+                    {
+                        "id": "project-edifice",
+                        "roots": [{"path": str(repository)}],
+                    }
+                ],
+                "nextCursor": None,
+            },
+        },
+        {
+            "id": 4,
+            "result": {
+                "cwd": str(repository),
+                "instructionSources": [str(repository / "AGENTS.md")],
+                "model": "gpt-test",
+                "sandbox": {"type": "readOnly"},
+                "thread": {
+                    "id": "thread-123",
+                    "cwd": str(repository),
+                    "projectId": "project-edifice",
+                },
+            },
+        },
+        {"id": 5, "result": {}},
+        {"id": 6, "result": {"turn": {"id": "turn-456"}}},
+    ]
+    process = _FakeAppServerProcess(responses)
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _FakeAppServerProcess:
+        return process
+
+    monkeypatch.setattr(
+        "edifice.coding_launch._start_proxy",
+        start_process,
+    )
+
+    task = launch_with_codex_app(
+        codex_binary="codex-test",
+        title="EDIFICE-200: Launch example",
+        repository=repository,
+        model="gpt-test",
+        sandbox="read-only",
+        prompt="Bounded assignment prompt.",
+    )
+
+    requests = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
+    assert requests[2] == {
+        "id": 2,
+        "method": "project/list",
+        "params": {"limit": 100},
+    }
+    assert requests[3] == {
+        "id": 3,
+        "method": "project/list",
+        "params": {
+            "cursor": "page-2",
+            "limit": 100,
+        },
+    }
+    assert task.thread_id == "thread-123"
+
+
 def test_codex_app_launcher_times_out_when_proxy_stalls(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -613,6 +708,100 @@ def test_codex_app_launcher_times_out_when_proxy_stalls(
             sandbox="read-only",
             prompt="Bounded assignment prompt.",
         )
+
+
+def test_codex_app_launcher_marks_pre_thread_broken_pipe_retryable(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    process = _FakeAppServerProcess([])
+    process.stdin = _BrokenInput()
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _FakeAppServerProcess:
+        return process
+
+    monkeypatch.setattr(
+        "edifice.coding_launch._start_proxy",
+        start_process,
+    )
+
+    with pytest.raises(
+        CodexLaunchRetryableError,
+        match="Cannot write to Codex app-server proxy",
+    ):
+        launch_with_codex_app(
+            codex_binary="codex-test",
+            title="EDIFICE-200: Launch example",
+            repository=tmp_path / "repository",
+            model="gpt-test",
+            sandbox="read-only",
+            prompt="Bounded assignment prompt.",
+        )
+
+
+def test_codex_app_launcher_cleanup_error_does_not_replace_success(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    responses: list[dict[str, object]] = [
+        {"id": 1, "result": {}},
+        {
+            "id": 2,
+            "result": {
+                "data": [
+                    {
+                        "id": "project-edifice",
+                        "roots": [{"path": str(repository)}],
+                    }
+                ],
+                "nextCursor": None,
+            },
+        },
+        {
+            "id": 3,
+            "result": {
+                "cwd": str(repository),
+                "instructionSources": [str(repository / "AGENTS.md")],
+                "model": "gpt-test",
+                "sandbox": {"type": "readOnly"},
+                "thread": {
+                    "id": "thread-123",
+                    "cwd": str(repository),
+                    "projectId": "project-edifice",
+                },
+            },
+        },
+        {"id": 4, "result": {}},
+        {"id": 5, "result": {"turn": {"id": "turn-456"}}},
+    ]
+    process = _WaitFailureProcess(responses)
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _WaitFailureProcess:
+        return process
+
+    monkeypatch.setattr(
+        "edifice.coding_launch._start_proxy",
+        start_process,
+    )
+
+    task = launch_with_codex_app(
+        codex_binary="codex-test",
+        title="EDIFICE-200: Launch example",
+        repository=repository,
+        model="gpt-test",
+        sandbox="read-only",
+        prompt="Bounded assignment prompt.",
+    )
+
+    assert task.thread_id == "thread-123"
+    assert task.turn_id == "turn-456"
 
 
 def test_codex_app_launcher_notifications_do_not_reset_rpc_deadline(
@@ -1372,3 +1561,93 @@ def test_code_launch_marks_proxy_start_failure_retryable(
     assert assignment_state["status"] == "launch-retryable"
     assert assignment_state["thread_id"] is None
     assert assignment_state["launch_error"].endswith("app-server unavailable")
+
+
+def test_code_launch_records_recovery_when_final_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+    task = CodexTask(
+        thread_id="thread-persist",
+        turn_id="turn-persist",
+        project_id="project-edifice",
+        cwd=repository,
+        instruction_sources=(repository / "AGENTS.md",),
+    )
+
+    def launch_task(**arguments: object) -> object:
+        callback = arguments["on_thread_started"]
+        assert callable(callback)
+        callback(
+            CodexTask(
+                thread_id=task.thread_id,
+                turn_id=None,
+                project_id=None,
+                cwd=None,
+                instruction_sources=(),
+            )
+        )
+        return task
+
+    write_count = 0
+
+    def fail_final_write(path: Path, value: dict[str, object]) -> None:
+        nonlocal write_count
+        write_count += 1
+        if write_count == 3:
+            raise OSError("final persistence failed")
+        path.write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.launch_with_codex_app",
+        launch_task,
+    )
+    monkeypatch.setattr(
+        "edifice.coding_launch._replace_json_atomically",
+        fail_final_write,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+        input="y\n",
+    )
+
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "launch-example"
+        / "coding-run.json"
+    )
+    coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    assignment_state = coding_run["assignment"]
+
+    assert result.exit_code != 0
+    assert "Cannot record completed Codex task thread-persist" in result.output
+    assert assignment_state["status"] == "launch-needs-review"
+    assert assignment_state["thread_id"] == "thread-persist"
+    assert assignment_state["launch_error"].endswith("final persistence failed")

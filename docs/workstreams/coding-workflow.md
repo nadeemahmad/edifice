@@ -236,6 +236,20 @@ retry, and a schema error in `launching`. Implementation resumed:
 - schema conditions now distinguish intent, retryable failure, partial
   recovery, and completed launch.
 
+Independent review of revision
+`664cc69ca1674efb18b2440c9c7f0ff682a70e95` found two major and two minor
+recovery issues: pre-thread pipe errors were not retryable, cleanup could
+replace success, final persistence errors were uncontrolled, and project
+discovery stopped at 100 projects. Implementation resumed:
+
+- pipe writes become controlled app-server errors and remain retryable before
+  `thread/start`;
+- all proxy cleanup failures are secondary and cannot replace the launch
+  result;
+- final persistence failure writes `launch-needs-review` from the already
+  durable thread identity when storage recovers;
+- project discovery follows cursor pagination while preserving request order.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.

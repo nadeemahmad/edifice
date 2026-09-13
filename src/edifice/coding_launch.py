@@ -276,7 +276,34 @@ def launch_coding_run(
             status="launched",
             launch_started_at=launch_started_at,
         )
-        _replace_json_atomically(run_path, updated_run)
+        try:
+            _replace_json_atomically(run_path, updated_run)
+        except OSError as error:
+            recovery_run = dict(coding_run)
+            recovery_state = _task_state(
+                task=task,
+                model=preview.model,
+                sandbox=preview.sandbox,
+                status="launch-needs-review",
+                launch_started_at=launch_started_at,
+            )
+            recovery_state["launch_error"] = (
+                f"Cannot record completed Codex task: {error}"
+            )
+            recovery_run["assignment"] = recovery_state
+            try:
+                _replace_json_atomically(run_path, recovery_run)
+            except OSError as recovery_error:
+                raise click.ClickException(
+                    "Cannot record completed Codex task "
+                    f"{task.thread_id}: {error}. "
+                    "The durable launching record retains the thread ID; "
+                    f"recovery update also failed: {recovery_error}"
+                ) from recovery_error
+            raise click.ClickException(
+                f"Cannot record completed Codex task {task.thread_id}: {error}. "
+                "Recorded the task for recovery."
+            ) from error
     return CodingLaunchResult(
         thread_id=thread_id,
         project_id=project_id,
@@ -462,7 +489,7 @@ def launch_with_codex_app(
                 },
             )
             _write_message(connection, {"method": "initialized"})
-            expected_project_id = _resolve_project(
+            expected_project_id, thread_request_id = _resolve_project(
                 connection,
                 repository,
                 project_roots,
@@ -471,7 +498,7 @@ def launch_with_codex_app(
             raise CodexLaunchRetryableError(error.message) from error
         thread_result = _rpc_request(
             connection,
-            request_id=3,
+            request_id=thread_request_id,
             method="thread/start",
             params={
                 "approvalPolicy": "on-request",
@@ -541,7 +568,7 @@ def launch_with_codex_app(
                 raise click.ClickException("Codex did not return the task worktree.")
             _rpc_request(
                 connection,
-                request_id=4,
+                request_id=thread_request_id + 1,
                 method="thread/name/set",
                 params={
                     "name": title,
@@ -552,7 +579,7 @@ def launch_with_codex_app(
                 before_turn()
             turn_result = _rpc_request(
                 connection,
-                request_id=5,
+                request_id=thread_request_id + 2,
                 method="turn/start",
                 params={
                     "input": [{"type": "text", "text": prompt}],
@@ -589,35 +616,46 @@ def _resolve_project(
     connection: _AppServerConnection,
     repository: Path,
     candidate_roots: set[Path],
-) -> str:
-    result = _rpc_request(
-        connection,
-        request_id=2,
-        method="project/list",
-        params={"limit": 100},
-    )
-    if result.get("nextCursor") is not None:
-        raise click.ClickException(
-            "Codex project list exceeds the supported launch page."
+) -> tuple[str, int]:
+    request_id = 2
+    cursor: str | None = None
+    matching_projects: set[str] = set()
+    while True:
+        params: dict[str, object] = {"limit": 100}
+        if cursor is not None:
+            params["cursor"] = cursor
+        result = _rpc_request(
+            connection,
+            request_id=request_id,
+            method="project/list",
+            params=params,
         )
-    projects_value = result.get("data")
-    if not isinstance(projects_value, list):
-        raise click.ClickException("Codex project list is invalid.")
-    matching_projects: list[str] = []
-    for value in cast(list[object], projects_value):
-        project = _require_mapping(value, "Codex project")
-        project_id = _require_string(project, "id")
-        roots_value = project.get("roots")
-        if not isinstance(roots_value, list):
-            raise click.ClickException("Codex project roots must be a list.")
-        root_paths = {
-            Path(_require_string(_require_mapping(root, "Codex project root"), "path"))
-            .expanduser()
-            .resolve()
-            for root in cast(list[object], roots_value)
-        }
-        if root_paths.intersection(candidate_roots):
-            matching_projects.append(project_id)
+        projects_value = result.get("data")
+        if not isinstance(projects_value, list):
+            raise click.ClickException("Codex project list is invalid.")
+        for value in cast(list[object], projects_value):
+            project = _require_mapping(value, "Codex project")
+            project_id = _require_string(project, "id")
+            roots_value = project.get("roots")
+            if not isinstance(roots_value, list):
+                raise click.ClickException("Codex project roots must be a list.")
+            root_paths = {
+                Path(
+                    _require_string(
+                        _require_mapping(root, "Codex project root"),
+                        "path",
+                    )
+                )
+                .expanduser()
+                .resolve()
+                for root in cast(list[object], roots_value)
+            }
+            if root_paths.intersection(candidate_roots):
+                matching_projects.add(project_id)
+        cursor = _optional_string(result.get("nextCursor"))
+        request_id += 1
+        if cursor is None:
+            break
     if not matching_projects:
         raise click.ClickException(
             f"No Codex project contains repository: {repository}"
@@ -626,7 +664,7 @@ def _resolve_project(
         raise click.ClickException(
             f"Multiple Codex projects contain repository: {repository}"
         )
-    return matching_projects[0]
+    return next(iter(matching_projects)), request_id
 
 
 def _repository_project_roots(repository: Path) -> set[Path]:
@@ -700,8 +738,15 @@ def _write_message(
     message: dict[str, object],
 ) -> None:
     assert connection.process.stdin is not None
-    connection.process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
-    connection.process.stdin.flush()
+    try:
+        connection.process.stdin.write(
+            json.dumps(message, separators=(",", ":")) + "\n"
+        )
+        connection.process.stdin.flush()
+    except OSError as error:
+        raise click.ClickException(
+            f"Cannot write to Codex app-server proxy: {error}"
+        ) from error
 
 
 def _start_readers(process: subprocess.Popen[str]) -> _AppServerConnection:
@@ -756,6 +801,8 @@ def _stop_proxy(process: subprocess.Popen[str]) -> None:
         pass
     try:
         process.wait(timeout=5)
+    except OSError:
+        return
     except subprocess.TimeoutExpired:
         try:
             process.kill()
