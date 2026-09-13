@@ -33,6 +33,7 @@ Fail closed when identity, policy, ownership, or approval is unclear.
 - Feature-owned files are listed in `docs/workstreams/<workstream>.md`.
 - `README.md`, `src/edifice/cli.py`, and shared system guides are
   integration-owned unless the assignment explicitly includes them.
+- Follow `docs/engineering/integration-ownership.md` for shared-file changes.
 - Do not edit another active workstream's owned files.
 - Use separate Git worktrees for concurrent write tasks.
 - Branches created by Codex use `nahmad/` and end in `-codex`.

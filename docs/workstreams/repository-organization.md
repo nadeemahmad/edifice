@@ -47,8 +47,13 @@ work on separate Edifice workstreams without relying on conversation history.
 ## Known Gaps
 
 - No machine-readable workstream registry exists.
-- Shared-file integration ownership is not enforced.
 - Existing dirty work has not been separated into intentional commits.
+
+Resolved during this workstream:
+
+- A machine-readable workstream registry now exists.
+- Shared files have one documented integration owner.
+- CLI command modularization has an explicit design and evidence trigger.
 
 ## Write Ownership
 

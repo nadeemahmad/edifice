@@ -158,6 +158,7 @@
       "owned_paths": [
         "AGENTS.md",
         "docs/agent-context.md",
+        "docs/engineering/integration-ownership.md",
         "docs/workstreams/README.md",
         "docs/workstreams/registry.json",
         "docs/workstreams/registry.schema.json",

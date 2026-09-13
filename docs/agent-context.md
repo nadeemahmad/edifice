@@ -64,6 +64,8 @@ hotspots include:
 
 Feature agents should return required shared-file changes as recommendations or
 small patches unless their assignment explicitly grants integration ownership.
+The integration procedure and deferred CLI composition design are recorded in
+`docs/engineering/integration-ownership.md`.
 
 ## Source And Live State
 
