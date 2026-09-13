@@ -244,6 +244,8 @@ def test_code_launch_confirmed_records_verified_codex_task(
         "path": "agent-assignment.preview.json",
         "runtime": "codex-app-server",
         "model": "gpt-test",
+        "sandbox": "read-only",
+        "launch_started_at": "2026-09-13T18:00:00+00:00",
         "thread_id": "thread-123",
         "turn_id": "turn-456",
         "project_id": "project-edifice",
@@ -251,6 +253,79 @@ def test_code_launch_confirmed_records_verified_codex_task(
         "launched_at": "2026-09-13T18:00:00+00:00",
         "instruction_sources": [str(repository / "AGENTS.md")],
     }
+
+
+def test_code_launch_records_intent_before_contacting_codex(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "launch-example"
+        / "coding-run.json"
+    )
+
+    def inspect_launch_intent(**_arguments: object) -> object:
+        coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+        assert coding_run["assignment"] == {
+            "status": "launching",
+            "path": "agent-assignment.preview.json",
+            "runtime": "codex-app-server",
+            "model": "gpt-test",
+            "sandbox": "read-only",
+            "launch_started_at": "2026-09-13T17:45:00+00:00",
+            "thread_id": None,
+            "turn_id": None,
+            "project_id": None,
+            "cwd": str(repository),
+            "instruction_sources": [],
+        }
+        return SimpleNamespace(
+            thread_id="thread-123",
+            turn_id="turn-456",
+            project_id="project-edifice",
+            cwd=repository,
+            instruction_sources=(repository / "AGENTS.md",),
+        )
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.launch_with_codex_app",
+        inspect_launch_intent,
+    )
+    monkeypatch.setattr(
+        "edifice.coding_launch._now",
+        lambda: "2026-09-13T17:45:00+00:00",
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code == 0
 
 
 class _RecordingInput(io.StringIO):
@@ -276,6 +351,11 @@ class _FakeAppServerProcess:
         return 0
 
 
+class _SelectableNoResponse(io.StringIO):
+    def fileno(self) -> int:
+        return 123
+
+
 def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -292,6 +372,8 @@ def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
             "result": {
                 "cwd": str(repository),
                 "instructionSources": [str(repository / "AGENTS.md")],
+                "model": "gpt-test",
+                "sandbox": {"type": "readOnly"},
                 "thread": {
                     "id": "thread-123",
                     "cwd": str(repository),
@@ -388,6 +470,49 @@ def test_codex_app_launcher_starts_named_project_task_and_opening_turn(
     assert task.instruction_sources == (repository / "AGENTS.md",)
 
 
+def test_codex_app_launcher_times_out_when_proxy_stalls(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    process = _FakeAppServerProcess([])
+    process.stdout = _SelectableNoResponse()
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _FakeAppServerProcess:
+        return process
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.subprocess.Popen",
+        start_process,
+    )
+
+    def no_ready_streams(
+        *_arguments: object,
+        **_options: object,
+    ) -> tuple[list[int], list[int], list[int]]:
+        return [], [], []
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.select.select",
+        no_ready_streams,
+    )
+
+    with pytest.raises(
+        click.ClickException,
+        match="Codex app-server timed out during initialize",
+    ):
+        launch_with_codex_app(
+            codex_binary="codex-test",
+            title="EDIFICE-200: Launch example",
+            repository=tmp_path / "repository",
+            model="gpt-test",
+            sandbox="read-only",
+            prompt="Bounded assignment prompt.",
+        )
+
+
 def test_code_launch_rejects_stale_repository_before_contacting_codex(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -444,6 +569,46 @@ def test_code_launch_rejects_stale_repository_before_contacting_codex(
     assert result.exit_code != 0
     assert "Repository changed since coding run" in result.output
     assert coding_run["assignment"]["status"] == "not-launched"
+
+
+def test_code_launch_dry_run_rejects_stale_repository(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+    (repository / "src" / "example.py").write_text(
+        'MESSAGE = "changed"\n',
+        encoding="utf-8",
+    )
+    _run_git(repository, "add", "src/example.py")
+    _run_git(repository, "commit", "-m", "Advance repository")
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "--dry-run",
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Repository changed since coding run" in result.output
+    assert "Dry run: no Codex task created." not in result.output
 
 
 def test_code_launch_retry_returns_recorded_task_without_contacting_codex(
@@ -605,6 +770,8 @@ def test_codex_app_launcher_preserves_thread_when_opening_turn_fails(
             "result": {
                 "cwd": str(repository),
                 "instructionSources": [str(repository / "AGENTS.md")],
+                "model": "gpt-test",
+                "sandbox": {"type": "readOnly"},
                 "thread": {
                     "id": "thread-partial",
                     "cwd": str(repository),
@@ -647,6 +814,175 @@ def test_codex_app_launcher_preserves_thread_when_opening_turn_fails(
     assert task.thread_id == "thread-partial"
     assert task.project_id == "project-edifice"
     assert task.cwd == repository
+
+
+def test_codex_app_launcher_preserves_thread_when_project_is_unassigned(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    responses: list[dict[str, object]] = [
+        {"id": 1, "result": {}},
+        {
+            "id": 2,
+            "result": {
+                "cwd": str(repository),
+                "instructionSources": [str(repository / "AGENTS.md")],
+                "model": "gpt-test",
+                "sandbox": {"type": "readOnly"},
+                "thread": {
+                    "id": "thread-unassigned",
+                    "cwd": str(repository),
+                    "projectId": None,
+                },
+            },
+        },
+    ]
+    process = _FakeAppServerProcess(responses)
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _FakeAppServerProcess:
+        return process
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.subprocess.Popen",
+        start_process,
+    )
+
+    with pytest.raises(click.ClickException) as caught:
+        launch_with_codex_app(
+            codex_binary="codex-test",
+            title="EDIFICE-200: Launch example",
+            repository=repository,
+            model="gpt-test",
+            sandbox="read-only",
+            prompt="Bounded assignment prompt.",
+        )
+
+    task = getattr(caught.value, "task", None)
+    assert task is not None
+    assert task.thread_id == "thread-unassigned"
+    assert task.project_id is None
+
+
+def test_codex_app_launcher_revalidates_repository_before_opening_turn(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    responses: list[dict[str, object]] = [
+        {"id": 1, "result": {}},
+        {
+            "id": 2,
+            "result": {
+                "cwd": str(repository),
+                "instructionSources": [str(repository / "AGENTS.md")],
+                "model": "gpt-test",
+                "sandbox": {"type": "readOnly"},
+                "thread": {
+                    "id": "thread-partial",
+                    "cwd": str(repository),
+                    "projectId": "project-edifice",
+                },
+            },
+        },
+        {"id": 3, "result": {}},
+    ]
+    process = _FakeAppServerProcess(responses)
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _FakeAppServerProcess:
+        return process
+
+    def reject_stale_repository() -> None:
+        raise click.ClickException("Repository changed during coding launch.")
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.subprocess.Popen",
+        start_process,
+    )
+
+    with pytest.raises(click.ClickException) as caught:
+        launch_with_codex_app(
+            codex_binary="codex-test",
+            title="EDIFICE-200: Launch example",
+            repository=repository,
+            model="gpt-test",
+            sandbox="read-only",
+            prompt="Bounded assignment prompt.",
+            before_turn=reject_stale_repository,
+        )
+
+    requests = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
+    task = getattr(caught.value, "task", None)
+    assert task is not None
+    assert task.thread_id == "thread-partial"
+    assert not any(request.get("method") == "turn/start" for request in requests)
+
+
+@pytest.mark.parametrize(
+    ("effective_model", "effective_sandbox", "expected_error"),
+    [
+        ("gpt-other", "readOnly", "Codex effective model mismatch"),
+        ("gpt-test", "workspaceWrite", "Codex effective sandbox mismatch"),
+    ],
+)
+def test_codex_app_launcher_rejects_effective_configuration_mismatch(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    effective_model: str,
+    effective_sandbox: str,
+    expected_error: str,
+) -> None:
+    repository = tmp_path / "repository"
+    responses: list[dict[str, object]] = [
+        {"id": 1, "result": {}},
+        {
+            "id": 2,
+            "result": {
+                "cwd": str(repository),
+                "instructionSources": [str(repository / "AGENTS.md")],
+                "model": effective_model,
+                "sandbox": {"type": effective_sandbox},
+                "thread": {
+                    "id": "thread-mismatch",
+                    "cwd": str(repository),
+                    "projectId": "project-edifice",
+                },
+            },
+        },
+        {"id": 3, "result": {}},
+        {"id": 4, "result": {"turn": {"id": "turn-456"}}},
+    ]
+    process = _FakeAppServerProcess(responses)
+
+    def start_process(
+        _arguments: list[str],
+        **_options: object,
+    ) -> _FakeAppServerProcess:
+        return process
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.subprocess.Popen",
+        start_process,
+    )
+
+    with pytest.raises(click.ClickException, match=expected_error):
+        launch_with_codex_app(
+            codex_binary="codex-test",
+            title="EDIFICE-200: Launch example",
+            repository=repository,
+            model="gpt-test",
+            sandbox="read-only",
+            prompt="Bounded assignment prompt.",
+        )
+
+    requests = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
+    assert not any(request.get("method") == "turn/start" for request in requests)
 
 
 def test_code_launch_records_partial_task_when_opening_turn_fails(
@@ -718,3 +1054,71 @@ def test_code_launch_records_partial_task_when_opening_turn_fails(
     assert assignment_state["thread_id"] == "thread-partial"
     assert assignment_state["turn_id"] == ""
     assert assignment_state["launch_error"] == ("Codex app-server rejected turn/start.")
+
+
+def test_code_launch_records_task_when_repository_changes_during_turn_start(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+
+    def launch_then_change_repository(**_arguments: object) -> object:
+        (repository / "src" / "example.py").write_text(
+            'MESSAGE = "changed during launch"\n',
+            encoding="utf-8",
+        )
+        _run_git(repository, "add", "src/example.py")
+        _run_git(repository, "commit", "-m", "Change during launch")
+        return SimpleNamespace(
+            thread_id="thread-stale",
+            turn_id="turn-stale",
+            project_id="project-edifice",
+            cwd=repository,
+            instruction_sources=(repository / "AGENTS.md",),
+        )
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.launch_with_codex_app",
+        launch_then_change_repository,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+        input="y\n",
+    )
+
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "launch-example"
+        / "coding-run.json"
+    )
+    coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    assignment_state = coding_run["assignment"]
+
+    assert result.exit_code != 0
+    assert "Repository changed since coding run" in result.output
+    assert "Recorded task thread-stale for recovery." in result.output
+    assert assignment_state["status"] == "launch-needs-review"
+    assert assignment_state["thread_id"] == "thread-stale"

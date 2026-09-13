@@ -294,6 +294,7 @@
         "status": {
           "enum": [
             "not-launched",
+            "launching",
             "launched",
             "launch-needs-review",
             "complete",
@@ -309,17 +310,39 @@
         "model": {
           "type": "string"
         },
+        "sandbox": {
+          "enum": [
+            "read-only",
+            "workspace-write"
+          ]
+        },
+        "launch_started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
         "thread_id": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "turn_id": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "project_id": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "cwd": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "launched_at": {
           "type": "string",
@@ -338,6 +361,7 @@
             "properties": {
               "status": {
                 "enum": [
+                  "launching",
                   "launched",
                   "launch-needs-review"
                 ]
@@ -348,6 +372,8 @@
             "required": [
               "runtime",
               "model",
+              "sandbox",
+              "launch_started_at",
               "thread_id",
               "turn_id",
               "project_id",

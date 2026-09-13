@@ -203,6 +203,22 @@ Launch implementation evidence:
 - Green: retries return the recorded task, while mismatched or partial tasks
   enter `launch-needs-review` with recovery metadata.
 
+Independent review of revision
+`df500c0c54d041973c7a2fbb712e8a03aa3cbf67` found five major launch risks:
+unbounded RPC reads, incomplete partial-task recovery, no durable pre-effect
+intent, repository drift during app-server communication, and unverified
+effective model or sandbox. Implementation resumed:
+
+- every RPC response has a 30-second deadline;
+- launch writes `launching` before app-server contact and blocks automatic
+  duplicate retries after an interrupted attempt;
+- thread identity is preserved before optional project, worktree, naming, or
+  turn validation;
+- repository and assignment validation runs immediately before and after the
+  opening turn request;
+- returned effective model and sandbox must match the preview;
+- dry-run performs the same pre-launch validation as confirmed launch.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.
