@@ -3,7 +3,9 @@ import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
+import pytest
 from click.testing import CliRunner
 from pytest import MonkeyPatch
 
@@ -35,19 +37,23 @@ def _create_repository(
     repository: Path,
     *,
     owned_paths: list[str] | None = None,
+    source_symlink: str | None = None,
 ) -> dict[str, object]:
     files = {
         "AGENTS.md": "# Repository instructions\n",
         "docs/agent-context.md": "# Agent context\n",
         "docs/engineering/owner-practices.md": "# Owner practices\n",
         "docs/workstreams/example.md": "# Example workstream\n",
-        "src/AGENTS.md": "# Source instructions\n",
-        "src/example.py": 'MESSAGE = "unchanged"\n',
     }
+    if source_symlink is None:
+        files["src/AGENTS.md"] = "# Source instructions\n"
+        files["src/example.py"] = 'MESSAGE = "unchanged"\n'
     for relative_path, content in files.items():
         path = repository / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+    if source_symlink is not None:
+        (repository / "src").symlink_to(source_symlink, target_is_directory=True)
 
     registry: dict[str, object] = {
         "schema_version": 1,
@@ -159,7 +165,7 @@ def test_code_start_creates_governed_run_and_assignment_without_touching_reposit
     }
     assert coding_run["active_mode"] == "design"
     assert coding_run["learning_level"] == "understand"
-    assert coding_run["writable_paths"] == ["src/example.py"]
+    assert coding_run["writable_paths"] == []
     assert coding_run["assignment"]["status"] == "not-launched"
     assert coding_run["gates"]["design"] == "required"
     assert coding_run["gates"]["tdd"] == "pending"
@@ -187,7 +193,7 @@ def test_code_start_creates_governed_run_and_assignment_without_touching_reposit
     assert assignment["base_revision"] == revision
     assert assignment["mode"] == "design"
     assert assignment["learning_level"] == "understand"
-    assert assignment["writable_paths"] == ["src/example.py"]
+    assert assignment["writable_paths"] == []
     validate_agent_assignment(
         assignment=assignment,
         registry=registry,
@@ -252,6 +258,127 @@ def test_code_start_retry_returns_identical_existing_run(
     assert retry.output.startswith("Existing coding run: retryable-run.\n")
     assert run_path.read_bytes() == before_run
     assert assignment_path.read_bytes() == before_assignment
+
+
+def test_code_start_implementation_mode_receives_registered_write_scope(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    monkeypatch.setattr(
+        "edifice.coding_run._now",
+        lambda: datetime(2026, 9, 13, 16, 30, tzinfo=UTC),
+    )
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Implementation scope",
+            "--objective",
+            "Permit only registered implementation writes.",
+            "--jira",
+            "EDIFICE-130",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "implementation",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    run_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / "implementation-scope"
+        / "coding-run.json"
+    )
+    coding_run = json.loads(run_path.read_text(encoding="utf-8"))
+    assignment = json.loads(
+        run_path.with_name("agent-assignment.preview.json").read_text(encoding="utf-8")
+    )
+
+    assert result.exit_code == 0
+    assert coding_run["writable_paths"] == ["src/example.py"]
+    assert assignment["writable_paths"] == ["src/example.py"]
+    assert (
+        "Do not modify the target repository." not in assignment["prohibited_effects"]
+    )
+    assert (
+        "Do not modify paths outside the declared writable paths."
+        in assignment["prohibited_effects"]
+    )
+
+
+@pytest.mark.parametrize("mode", ["research", "design", "verification", "review"])
+def test_code_start_read_only_modes_receive_no_write_scope(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    mode: str,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    monkeypatch.setattr(
+        "edifice.coding_run._now",
+        lambda: datetime(2026, 9, 13, 16, 30, tzinfo=UTC),
+    )
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            f"{mode} scope",
+            "--objective",
+            "Preserve read-only mode permissions.",
+            "--jira",
+            "EDIFICE-131",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            mode,
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    assignment_path = (
+        vault_root
+        / "20-work"
+        / "operations"
+        / "coding-runs"
+        / f"{mode}-scope"
+        / "agent-assignment.preview.json"
+    )
+    assignment = json.loads(assignment_path.read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert assignment["writable_paths"] == []
+    assert "Do not modify the target repository." in assignment["prohibited_effects"]
 
 
 def test_code_start_rejects_conflicting_retry_without_changing_existing_run(
@@ -412,4 +539,112 @@ def test_code_start_rejects_unsafe_registered_path_before_context_discovery(
 
     assert result.exit_code != 0
     assert "Unsafe registered writable path: /outside/repository.py" in result.output
+    assert not vault_root.exists()
+
+
+def test_code_start_rejects_writable_path_resolving_outside_repository(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "AGENTS.md").write_text(
+        "# Instructions outside the repository\n",
+        encoding="utf-8",
+    )
+    (outside / "example.py").write_text(
+        'MESSAGE = "outside"\n',
+        encoding="utf-8",
+    )
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository, source_symlink="../outside")
+    vault_root = tmp_path / "vault"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Symlink escape",
+            "--objective",
+            "Reject paths outside the repository.",
+            "--jira",
+            "EDIFICE-128",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Registered writable path resolves outside repository" in result.output
+    assert not vault_root.exists()
+
+
+def test_code_start_rejects_repository_change_during_context_preparation(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+
+    def mutate_after_clean_check(
+        registry: dict[str, object],
+        workstream_id: str,
+    ) -> dict[str, object]:
+        workstreams = cast(list[object], registry["workstreams"])
+        workstream = cast(dict[str, object], workstreams[0])
+        assert workstream["id"] == workstream_id
+        (repository / "AGENTS.md").write_text(
+            "# Changed after the clean check\n",
+            encoding="utf-8",
+        )
+        return workstream
+
+    vault_root = tmp_path / "vault"
+    monkeypatch.setattr(
+        "edifice.coding_run._find_workstream",
+        mutate_after_clean_check,
+    )
+    result = CliRunner().invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, tmp_path / "audit"),
+            "code",
+            "start",
+            "--name",
+            "Racing context",
+            "--objective",
+            "Reject context that differs from the recorded revision.",
+            "--jira",
+            "EDIFICE-129",
+            "--repo",
+            str(repository),
+            "--workstream",
+            "example",
+            "--mode",
+            "design",
+            "--learning-level",
+            "brief",
+            "--classification",
+            "netflix-internal",
+            "--review-on",
+            "2026-09-20",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Repository changed while preparing coding run." in result.output
     assert not vault_root.exists()

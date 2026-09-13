@@ -84,6 +84,20 @@ ownership broke the existing integration-owner assignment invariant. The
 registry now keeps shared files integration-owned and registers only the new
 coding-workflow files as feature-owned.
 
+Independent review of revision
+`d0a43bf019601c09579d3e27496e5e2a92ec9ce5` found three major issues:
+
+- symlinked writable paths could resolve outside the repository;
+- context hashing could race with a worktree change after the clean check;
+- read-only modes received write scope while implementation mode prohibited
+  repository changes.
+
+Implementation resumed after review. The command now checks resolved-path
+containment before context discovery, reads registry and context bytes from the
+recorded Git revision, rechecks repository state before publication, and
+derives assignment permissions from the selected mode. Focused regression
+tests cover each finding.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.
@@ -93,6 +107,9 @@ coding-workflow files as feature-owned.
 - Mode transitions and TDD, verification, review, closeout, and PR-draft
   evidence updates remain manual future slices.
 - No PR-draft workflow or JIRA verification gate exists.
+- The coding-run JSON schema is not executed by a general schema validator.
+  Behavior tests check the generated record directly, so schema drift remains
+  a minor review risk.
 
 ## Write Ownership
 

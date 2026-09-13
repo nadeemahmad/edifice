@@ -28,6 +28,7 @@ from edifice.agent_assignment import (
 CODING_RUN_DIRECTORY = Path("20-work/operations/coding-runs")
 JIRA_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+-[1-9][0-9]*$")
 CLASSIFICATIONS = frozenset({"public", "netflix-internal", "netflix-confidential"})
+READ_ONLY_MODES = frozenset({"research", "design", "verification", "review"})
 REQUIRED_CHECKS = (
     ".venv/bin/python -m pytest -p no:cacheprovider",
     ".venv/bin/ruff check --no-cache .",
@@ -35,9 +36,8 @@ REQUIRED_CHECKS = (
     ".venv/bin/python .venv/bin/pyright",
     "git diff --check",
 )
-PROHIBITED_EFFECTS = (
+BASE_PROHIBITED_EFFECTS = (
     "Do not launch an agent.",
-    "Do not modify the target repository.",
     "Do not mutate JIRA, GitHub, the live vault, or another external system.",
     "Do not install software, authenticate, push, or create a pull request.",
 )
@@ -107,17 +107,25 @@ def start_coding_run(
     if working_tree:
         raise click.ClickException("Repository working tree must be clean.")
 
-    registry_path = repository_root / "docs" / "workstreams" / "registry.json"
-    registry = _load_mapping(registry_path, "workstream registry")
+    registry = _load_mapping_bytes(
+        _git_bytes(
+            repository_root,
+            "show",
+            f"{revision}:docs/workstreams/registry.json",
+        ),
+        f"workstream registry at revision {revision}",
+    )
     workstream = _find_workstream(registry, workstream_id)
-    writable_paths = _string_list(workstream, "owned_paths")
-    if not writable_paths:
+    registered_paths = _string_list(workstream, "owned_paths")
+    if not registered_paths:
         raise click.ClickException(f"Workstream has no writable paths: {workstream_id}")
-    _validate_registered_paths(writable_paths)
+    _validate_registered_paths(repository_root, registered_paths)
+    writable_paths = [] if normalized_mode in READ_ONLY_MODES else registered_paths
+    prohibited_effects = _prohibited_effects(normalized_mode)
     context_paths = _context_paths(
         repository_root=repository_root,
         workstream=workstream,
-        writable_paths=writable_paths,
+        writable_paths=registered_paths,
     )
     created_at = _now()
     assignment = _assignment(
@@ -131,6 +139,7 @@ def start_coding_run(
         objective=normalized_objective,
         context_paths=context_paths,
         writable_paths=writable_paths,
+        prohibited_effects=prohibited_effects,
     )
     try:
         validate_agent_assignment(
@@ -176,19 +185,15 @@ def start_coding_run(
             }
         ],
         "learning_level": normalized_learning_level,
-        "context_manifest": [
-            {
-                "path": path,
-                "sha256": hashlib.sha256(
-                    (repository_root / path).read_bytes()
-                ).hexdigest(),
-                "loaded_at": created_at.isoformat(),
-            }
-            for path in context_paths
-        ],
+        "context_manifest": _context_manifest(
+            repository_root=repository_root,
+            revision=revision,
+            context_paths=context_paths,
+            loaded_at=created_at,
+        ),
         "writable_paths": writable_paths,
         "required_checks": list(REQUIRED_CHECKS),
-        "prohibited_effects": list(PROHIBITED_EFFECTS),
+        "prohibited_effects": prohibited_effects,
         "completion_criteria": list(COMPLETION_CRITERIA),
         "gates": {
             "design": "required",
@@ -213,6 +218,11 @@ def start_coding_run(
     run_relative_path = CODING_RUN_DIRECTORY / slug / "coding-run.json"
     assignment_relative_path = (
         CODING_RUN_DIRECTORY / slug / "agent-assignment.preview.json"
+    )
+    _require_unchanged_repository(
+        repository_root=repository_root,
+        branch=branch,
+        revision=revision,
     )
     with _coding_run_lock(audit_root):
         created = _write_run_directory(
@@ -241,6 +251,7 @@ def _assignment(
     objective: str,
     context_paths: list[str],
     writable_paths: list[str],
+    prohibited_effects: list[str],
 ) -> dict[str, object]:
     return {
         "schema_version": 1,
@@ -256,9 +267,43 @@ def _assignment(
         "context_paths": context_paths,
         "writable_paths": writable_paths,
         "required_checks": list(REQUIRED_CHECKS),
-        "prohibited_effects": list(PROHIBITED_EFFECTS),
+        "prohibited_effects": prohibited_effects,
         "completion_criteria": list(COMPLETION_CRITERIA),
     }
+
+
+def _prohibited_effects(mode: str) -> list[str]:
+    effects: list[str] = list(BASE_PROHIBITED_EFFECTS)
+    if mode in READ_ONLY_MODES:
+        effects.append("Do not modify the target repository.")
+    else:
+        effects.append("Do not modify paths outside the declared writable paths.")
+    return effects
+
+
+def _context_manifest(
+    *,
+    repository_root: Path,
+    revision: str,
+    context_paths: list[str],
+    loaded_at: datetime,
+) -> list[dict[str, str]]:
+    manifest: list[dict[str, str]] = []
+    for path in context_paths:
+        try:
+            content = _git_bytes(repository_root, "show", f"{revision}:{path}")
+        except subprocess.CalledProcessError as error:
+            raise click.ClickException(
+                f"Repository context is unavailable at revision {revision}: {path}"
+            ) from error
+        manifest.append(
+            {
+                "path": path,
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "loaded_at": loaded_at.isoformat(),
+            }
+        )
+    return manifest
 
 
 def _context_paths(
@@ -282,6 +327,11 @@ def _context_paths(
                 context_paths.add(instruction_path.as_posix())
     ordered_paths = sorted(context_paths)
     for path in ordered_paths:
+        _require_contained_path(
+            repository_root,
+            path,
+            "Repository context resolves outside repository",
+        )
         if not (repository_root / path).is_file():
             raise click.ClickException(
                 f"Required repository context is missing: {path}"
@@ -365,11 +415,42 @@ def _git_value(repository_root: Path, *arguments: str) -> str:
     return result.stdout.strip()
 
 
+def _git_bytes(repository_root: Path, *arguments: str) -> bytes:
+    result = subprocess.run(
+        ["git", *arguments],
+        cwd=repository_root,
+        check=True,
+        capture_output=True,
+    )
+    return result.stdout
+
+
+def _require_unchanged_repository(
+    *,
+    repository_root: Path,
+    branch: str,
+    revision: str,
+) -> None:
+    if (
+        _git_value(repository_root, "branch", "--show-current") != branch
+        or _git_value(repository_root, "rev-parse", "HEAD") != revision
+        or _git_value(repository_root, "status", "--porcelain")
+    ):
+        raise click.ClickException("Repository changed while preparing coding run.")
+
+
 def _load_mapping(path: Path, label: str) -> dict[str, object]:
     try:
-        value: object = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        return _load_mapping_bytes(path.read_bytes(), label)
+    except OSError as error:
         raise click.ClickException(f"Cannot read {label}: {path}") from error
+
+
+def _load_mapping_bytes(content: bytes, label: str) -> dict[str, object]:
+    try:
+        value: object = json.loads(content)
+    except (OSError, json.JSONDecodeError) as error:
+        raise click.ClickException(f"Cannot read {label}.") from error
     if not isinstance(value, dict):
         raise click.ClickException(f"{label.capitalize()} must be a JSON object.")
     return cast(dict[str, object], value)
@@ -392,11 +473,28 @@ def _string_list(mapping: dict[str, object], field: str) -> list[str]:
     return cast(list[str], items)
 
 
-def _validate_registered_paths(paths: list[str]) -> None:
+def _validate_registered_paths(repository_root: Path, paths: list[str]) -> None:
     for value in paths:
         path = Path(value)
         if path.is_absolute() or ".." in path.parts:
             raise click.ClickException(f"Unsafe registered writable path: {value}")
+        _require_contained_path(
+            repository_root,
+            value,
+            "Registered writable path resolves outside repository",
+        )
+
+
+def _require_contained_path(
+    repository_root: Path,
+    value: str,
+    message: str,
+) -> None:
+    resolved = (repository_root / value).resolve()
+    try:
+        resolved.relative_to(repository_root)
+    except ValueError as error:
+        raise click.ClickException(f"{message}: {value}") from error
 
 
 def _write_run_directory(
