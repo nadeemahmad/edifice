@@ -243,10 +243,18 @@ def launch_coding_run(
             try:
                 _replace_json_atomically(run_path, updated_run)
             except OSError as recovery_error:
+                if recovery_path.is_file():
+                    recovery_detail = (
+                        f"Task {error.task.thread_id} is recorded in "
+                        f"{recovery_path.name}"
+                    )
+                else:
+                    recovery_detail = (
+                        f"Task {error.task.thread_id} could not be durably recorded"
+                    )
                 raise click.ClickException(
-                    f"{error.message} Task {error.task.thread_id} is recorded in "
-                    f"{recovery_path.name}; coding-run recovery update failed: "
-                    f"{recovery_error}"
+                    f"{error.message} {recovery_detail}; "
+                    f"coding-run recovery update failed: {recovery_error}"
                 ) from recovery_error
             raise click.ClickException(
                 f"{error.message} Recorded task {error.task.thread_id} for recovery."

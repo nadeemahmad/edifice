@@ -120,17 +120,18 @@ Preview a Codex task launch without contacting Codex:
 edifice --dry-run code launch RUN --model MODEL
 ```
 
-Launch after reviewing the project, worktree, model, sandbox, and task title:
+Launch after reviewing the worktree, model, sandbox, and task title:
 
 ```text
 edifice code launch RUN --model MODEL
 ```
 
 The command revalidates the exact assignment and repository, then requires
-confirmation. It connects to the running Codex app-server daemon, creates a
-persistent task from the recorded worktree, names it, starts the opening turn,
-and records the returned thread, turn, project, model, worktree, and loaded
-instruction sources. Repeating the command returns the recorded task.
+confirmation. After confirmation, it resolves the saved Codex project from the
+repository roots, creates a persistent task from the recorded worktree, names
+it, starts the opening turn, and records the returned thread, turn, project,
+model, worktree, and loaded instruction sources. Repeating the command returns
+the recorded task.
 
 If Codex creates a task that fails project or worktree verification, or creates
 a thread but cannot start its opening turn, Edifice records

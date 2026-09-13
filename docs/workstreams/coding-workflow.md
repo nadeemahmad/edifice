@@ -271,6 +271,13 @@ Implementation resumed:
   still enter `launch-needs-review`;
 - project discovery rejects repeated cursors and more than 100 pages.
 
+Independent review of revision
+`58afc617ebeee0ef66bbac1f917e2344f1a66779` found no blocker or major
+findings. One minor error message claimed durable recovery when both recovery
+writes had failed. The message now checks for the recovery file before making
+that claim and always reports the thread ID. The README now states that saved
+project resolution occurs after confirmation.
+
 ## Known Gaps
 
 - No skill or playbook has been qualified for the pilot.

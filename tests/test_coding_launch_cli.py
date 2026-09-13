@@ -1919,3 +1919,86 @@ def test_code_launch_records_thread_when_recovery_file_write_fails(
     assert "thread-recovery-failed" in result.output
     assert assignment_state["status"] == "launch-needs-review"
     assert assignment_state["thread_id"] == "thread-recovery-failed"
+
+
+def test_code_launch_does_not_claim_recovery_when_all_recovery_writes_fail(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _create_repository(repository)
+    vault_root = tmp_path / "vault"
+    audit_root = tmp_path / "audit"
+    runner = CliRunner()
+    _start_run(
+        runner,
+        vault_root=vault_root,
+        audit_root=audit_root,
+        repository=repository,
+    )
+    partial_task = CodexTask(
+        thread_id="thread-undurable",
+        turn_id=None,
+        project_id=None,
+        cwd=None,
+        instruction_sources=(),
+    )
+
+    def launch_with_failed_recovery(**arguments: object) -> object:
+        callback = arguments["on_thread_started"]
+        assert callable(callback)
+        try:
+            callback(partial_task)
+        except click.ClickException as error:
+            raise CodexTaskStartedError(error.message, partial_task) from error
+        raise AssertionError("callback unexpectedly succeeded")
+
+    write_count = 0
+
+    def fail_main_recovery(path: Path, value: dict[str, object]) -> None:
+        nonlocal write_count
+        write_count += 1
+        if write_count >= 2:
+            raise OSError("main recovery unavailable")
+        path.write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    def fail_recovery_file(
+        _path: Path,
+        **_arguments: object,
+    ) -> None:
+        raise OSError("recovery file unavailable")
+
+    monkeypatch.setattr(
+        "edifice.coding_launch.launch_with_codex_app",
+        launch_with_failed_recovery,
+    )
+    monkeypatch.setattr(
+        "edifice.coding_launch._replace_json_atomically",
+        fail_main_recovery,
+    )
+    monkeypatch.setattr(
+        "edifice.coding_launch._write_launch_recovery",
+        fail_recovery_file,
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            *_base_arguments(vault_root, audit_root),
+            "code",
+            "launch",
+            "launch-example",
+            "--model",
+            "gpt-test",
+        ],
+        input="y\n",
+    )
+
+    assert result.exit_code != 0
+    assert "thread-undurable" in result.output
+    assert "could not be durably recorded" in result.output
+    assert "is recorded in launch-recovery.json" not in result.output
