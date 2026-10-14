@@ -1910,7 +1910,7 @@ def _require_migrations_root(paths: RuntimePaths) -> Path:
 )
 @click.pass_obj
 def today(paths: RuntimePaths, selected_date: datetime | None) -> None:
-    """Open a daily review."""
+    """Prepare and open a daily review with a link to today's work plan."""
     review_date = (
         selected_date.date()
         if selected_date is not None
@@ -1919,7 +1919,78 @@ def today(paths: RuntimePaths, selected_date: datetime | None) -> None:
     relative_path = (
         Path("10-personal/operations/reviews/daily") / f"{review_date.isoformat()}.md"
     )
+    _prepare_daily_review(paths, relative_path, review_date.isoformat())
+    if paths.dry_run:
+        click.echo(f"Would open {relative_path} in Obsidian.")
+        return
     _open_note(paths, relative_path)
+
+
+def _prepare_daily_review(
+    paths: RuntimePaths, relative_path: Path, review_date: str
+) -> None:
+    target = paths.vault_root / relative_path
+    work_relative = Path("20-work/operations/reviews/daily") / f"{review_date}.md"
+    work_target = paths.vault_root / work_relative
+    for note_path in (target, work_target):
+        expected = paths.vault_root.resolve() / note_path.relative_to(paths.vault_root)
+        if note_path.resolve() != expected:
+            raise click.ClickException("Daily review path must not follow symlinks.")
+        if note_path.exists() and not note_path.is_file():
+            raise click.ClickException(f"Daily review is not a file: {note_path}")
+    if paths.dry_run:
+        if not target.exists():
+            click.echo(f"Would create {relative_path}.")
+        if work_target.is_file():
+            click.echo(f"Would link {work_relative} from the daily review.")
+        return
+
+    paths.audit_root.mkdir(parents=True, exist_ok=True)
+    with _capture_lock(paths.audit_root):
+        before = target.read_bytes() if target.exists() else b""
+        content = (
+            before.decode("utf-8")
+            if target.exists()
+            else _new_daily_review(review_date)
+        )
+        work_link = f"[[{work_relative.with_suffix('').as_posix()}|Today's work plan]]"
+        if work_target.is_file() and work_link not in content:
+            content += (
+                "\n\n<!-- edifice:daily-work:start -->\n"
+                f"## Work plan\n\n{work_link}\n"
+                "<!-- edifice:daily-work:end -->\n"
+            )
+        after = content.encode("utf-8")
+        if target.exists() and before == after:
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        audit_path = _audit_path(paths.audit_root)
+        review_id = f"review_{new_uuid7()}"
+        for event_type in ("daily-review.prepared", "daily-review.committed"):
+            _append_audit_event(
+                audit_path,
+                event_type=event_type,
+                review_id=review_id,
+                target=f"vault://edifice/{relative_path.as_posix()}",
+                before_hash=_sha256(before),
+                after_hash=_sha256(after),
+            )
+            if event_type == "daily-review.prepared":
+                _replace_atomically(target, after)
+
+
+def _new_daily_review(review_date: str) -> str:
+    return (
+        "---\n"
+        f"id: review_{new_uuid7()}\n"
+        "type: review\nschema_version: 1\n"
+        f"created: {datetime.now().astimezone().date().isoformat()}\n"
+        "status: preparing\ncadence: daily\n"
+        f"period_start: {review_date}\nperiod_end: {review_date}\n"
+        f"scheduled_for: {review_date}\n---\n\n"
+        "# Daily Review\n\n## Intended result\n\n## Evidence\n\n"
+        "## Needs attention\n\n## Decisions\n\n## Closeout\n\n## Next move\n"
+    )
 
 
 @cli.command()
@@ -2060,7 +2131,9 @@ def _append_audit_event(
     audit_path: Path,
     *,
     event_type: str,
-    capture_id: str,
+    capture_id: str | None = None,
+    review_id: str | None = None,
+    target: str = "vault://edifice/01-inbox/inbox.md",
     before_hash: str,
     after_hash: str,
 ) -> None:
@@ -2070,11 +2143,16 @@ def _append_audit_event(
         "timestamp": datetime.now(UTC).isoformat(),
         "profile": "personal",
         "event_type": event_type,
-        "capture_id": capture_id,
-        "target": "vault://edifice/01-inbox/inbox.md",
+        "target": target,
         "before_hash": before_hash,
         "after_hash": after_hash,
     }
+    if review_id is not None:
+        event["review_id"] = review_id
+    elif capture_id is not None:
+        event["capture_id"] = capture_id
+    else:
+        raise ValueError("Audit events require a capture or review ID.")
     encoded = f"{json.dumps(event, sort_keys=True, separators=(',', ':'))}\n".encode()
     descriptor = os.open(
         audit_path,
@@ -2100,7 +2178,8 @@ def _replace_atomically(target: Path, content: bytes) -> None:
         temporary_path = Path(temporary.name)
 
     try:
-        temporary_path.chmod(target.stat().st_mode)
+        if target.exists():
+            temporary_path.chmod(target.stat().st_mode)
         os.replace(temporary_path, target)
     finally:
         temporary_path.unlink(missing_ok=True)

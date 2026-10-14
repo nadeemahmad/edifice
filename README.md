@@ -78,6 +78,18 @@ edifice inbox route CAPTURE_ID --to current-work-note
 
 ## Work projects and tasks
 
+### Daily planning
+
+Run `edifice today` throughout the day to open the personal daily review.
+The command creates the review if it is missing and adds a link to the matching
+`20-work/operations/reviews/daily/YYYY-MM-DD.md` work plan when one exists.
+Personal notes remain unchanged, apart from the appended work-plan link.
+Work task text stays under `20-work`; it is never copied into the personal
+review. Repeated runs do not duplicate the link or create a work plan.
+
+Use `edifice today --date YYYY-MM-DD` for another day. `edifice --dry-run today`
+previews creation, linking, and navigation without writing or opening Obsidian.
+
 Start a durable work project before JIRA, repository, or document context is
 available:
 
